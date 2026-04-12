@@ -1,0 +1,139 @@
+package adminpages
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/eduexchange/eduexchange/internal/model"
+	authrepo "github.com/eduexchange/eduexchange/internal/repository/auth"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+type UserListData struct {
+	Users    []model.UserWithRoles
+	Total    int
+	Page     int
+	PageSize int
+	Filter   authrepo.ListFilter
+	Username string
+}
+
+func (d UserListData) totalPages() int {
+	if d.PageSize == 0 {
+		return 1
+	}
+	pages := d.Total / d.PageSize
+	if d.Total%d.PageSize != 0 {
+		pages++
+	}
+	return pages
+}
+
+templ UserListPage(data UserListData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Users",
+		ActiveRoute: "/admin/users",
+		Username:    data.Username,
+		UserRole:    "ADMIN",
+	}) {
+		@components.PageHeader("User Management", []components.Breadcrumb{{Label: fmt.Sprintf("%d users", data.Total)}})
+		<!-- Filter bar -->
+		<form
+			hx-get="/admin/users"
+			hx-target="#user-table-section"
+			hx-swap="outerHTML"
+			hx-push-url="true"
+			style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-end;"
+		>
+			<div style="flex:1;min-width:200px;">
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Search</label>
+				<input class="ee-input" type="text" name="search" value={ data.Filter.Search } placeholder="Username or email…"/>
+			</div>
+			<div>
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Status</label>
+				<select class="ee-input" name="status" style="min-width:130px;">
+					<option value="">All statuses</option>
+					for _, s := range []string{"ACTIVE","SUSPENDED","BANNED","DEACTIVATED"} {
+						if data.Filter.Status == s {
+							<option value={ s } selected>{ s }</option>
+						} else {
+							<option value={ s }>{ s }</option>
+						}
+					}
+				</select>
+			</div>
+			<div>
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Role</label>
+				<select class="ee-input" name="role" style="min-width:140px;">
+					<option value="">All roles</option>
+					for _, r := range []string{"REGULAR_USER","AUTHOR","REVIEWER","SUPPLIER","ADMIN"} {
+						if data.Filter.Role == r {
+							<option value={ r } selected>{ r }</option>
+						} else {
+							<option value={ r }>{ r }</option>
+						}
+					}
+				</select>
+			</div>
+			<button type="submit" class="ee-btn ee-btn--secondary">Filter</button>
+		</form>
+		<!-- Table section (htmx target) -->
+		<div id="user-table-section">
+			if len(data.Users) == 0 {
+				@components.EmptyState("users", "No users found", "Try adjusting your filters.", "", "")
+			} else {
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;overflow:hidden;box-shadow:var(--shadow-sm);">
+					<table style="width:100%;border-collapse:collapse;">
+						<thead>
+							<tr style="background:var(--surface-secondary);">
+								<th style="padding:10px 16px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Username</th>
+								<th style="padding:10px 16px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Email</th>
+								<th style="padding:10px 16px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Status</th>
+								<th style="padding:10px 16px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Roles</th>
+								<th style="padding:10px 16px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, uwr := range data.Users {
+								<tr style="border-top:1px solid var(--border-default);">
+									<td style="padding:12px 16px;font-size:0.875rem;font-weight:500;color:var(--text-primary);">{ uwr.User.Username }</td>
+									<td style="padding:12px 16px;font-size:0.875rem;color:var(--text-secondary);">{ uwr.User.Email }</td>
+									<td style="padding:12px 16px;">
+										@components.Badge(uwr.User.Status.String(), uwr.User.Status.String())
+									</td>
+									<td style="padding:12px 16px;">
+										<div style="display:flex;gap:4px;flex-wrap:wrap;">
+											for _, role := range uwr.Roles {
+												<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:500;background:var(--brand-primary-light);color:var(--brand-primary);">{ role.String() }</span>
+											}
+										</div>
+									</td>
+									<td style="padding:12px 16px;">
+										<a href={ templ.SafeURL("/admin/users/" + uwr.User.ID.String()) } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:4px 12px;">View</a>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+				<!-- Pagination -->
+				if data.totalPages() > 1 {
+					<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+						<span style="font-size:0.875rem;color:var(--text-tertiary);">
+							Page { strconv.Itoa(data.Page) } of { strconv.Itoa(data.totalPages()) } ({ strconv.Itoa(data.Total) } total)
+						</span>
+						<div style="display:flex;gap:8px;">
+							if data.Page > 1 {
+								<a href={ templ.SafeURL(fmt.Sprintf("/admin/users?page=%d&status=%s&role=%s&search=%s", data.Page-1, data.Filter.Status, data.Filter.Role, data.Filter.Search)) } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:6px 12px;">← Previous</a>
+							}
+							if data.Page < data.totalPages() {
+								<a href={ templ.SafeURL(fmt.Sprintf("/admin/users?page=%d&status=%s&role=%s&search=%s", data.Page+1, data.Filter.Status, data.Filter.Role, data.Filter.Search)) } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:6px 12px;">Next →</a>
+							}
+						</div>
+					</div>
+				}
+			}
+		</div>
+	}
+}

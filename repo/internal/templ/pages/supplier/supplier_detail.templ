@@ -1,0 +1,166 @@
+package supplierpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+	supplierservice "github.com/eduexchange/eduexchange/internal/service/supplier"
+)
+
+// SupplierDetailData holds data for the supplier detail page.
+type SupplierDetailData struct {
+	Supplier *model.Supplier
+	Orders   []model.SupplierOrder
+	KPI      *model.SupplierKPI
+	IsAdmin  bool
+	AuthUser *middleware.AuthUser
+}
+
+func (d SupplierDetailData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d SupplierDetailData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+func (d SupplierDetailData) contactDisplay() string {
+	if d.Supplier == nil {
+		return ""
+	}
+	if d.IsAdmin && d.Supplier.ContactJSON != "" {
+		return supplierservice.DecryptContact(d.Supplier.ContactJSON)
+	}
+	return d.Supplier.ContactMask
+}
+
+// SupplierDetailPage renders the supplier detail page.
+templ SupplierDetailPage(data SupplierDetailData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Supplier Detail",
+		ActiveRoute: "/suppliers",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		if data.Supplier != nil {
+			<div style="margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;">
+				<div>
+					<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">{ data.Supplier.Name }</h1>
+					<div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+						@TierBadge(data.Supplier.Tier)
+						@StatusBadge(data.Supplier.Status)
+					</div>
+				</div>
+				<a href="/suppliers" style="font-size:0.875rem;color:var(--brand-primary);">← Back to Suppliers</a>
+			</div>
+
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;">
+					<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Contact Information</h2>
+					<div>
+						<span style="font-size:0.875rem;color:var(--text-secondary);">Contact: </span>
+						if data.IsAdmin {
+							<span class="supplier-contact-full" style="font-size:0.875rem;font-weight:500;">{ data.contactDisplay() }</span>
+						} else {
+							<span class="supplier-contact-masked" style="font-size:0.875rem;font-weight:500;color:var(--text-tertiary);">{ data.Supplier.ContactMask }</span>
+						}
+					</div>
+				</div>
+
+				if data.KPI != nil {
+					<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;">
+						<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Latest KPI Summary</h2>
+						<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+							<div>
+								<div style="font-size:0.75rem;color:var(--text-secondary);">OTD</div>
+								<div style="font-size:1.125rem;font-weight:700;">{ fmt.Sprintf("%.1f%%", data.KPI.OnTimeDeliveryPct) }</div>
+							</div>
+							<div>
+								<div style="font-size:0.75rem;color:var(--text-secondary);">Stockout</div>
+								<div style="font-size:1.125rem;font-weight:700;">{ fmt.Sprintf("%.1f%%", data.KPI.StockoutRatePct) }</div>
+							</div>
+							<div>
+								<div style="font-size:0.75rem;color:var(--text-secondary);">Return Rate</div>
+								<div style="font-size:1.125rem;font-weight:700;">{ fmt.Sprintf("%.1f%%", data.KPI.ReturnRatePct) }</div>
+							</div>
+							<div>
+								<div style="font-size:0.75rem;color:var(--text-secondary);">Defect Rate</div>
+								<div style="font-size:1.125rem;font-weight:700;">{ fmt.Sprintf("%.1f%%", data.KPI.DefectRatePct) }</div>
+							</div>
+						</div>
+						<div style="margin-top:12px;">
+							<a href={ templ.SafeURL("/suppliers/" + data.Supplier.ID.String() + "/kpis") } style="font-size:0.875rem;color:var(--brand-primary);">View Full KPI Dashboard →</a>
+						</div>
+					</div>
+				}
+			</div>
+
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;overflow:hidden;">
+				<div style="padding:16px 20px;border-bottom:1px solid var(--border-default);display:flex;align-items:center;justify-content:space-between;">
+					<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);">Orders</h2>
+					if data.IsAdmin {
+						<a href={ templ.SafeURL("/supplier/orders/new?supplier_id=" + data.Supplier.ID.String()) } style="display:inline-flex;align-items:center;padding:6px 14px;background:var(--brand-primary);color:white;border-radius:6px;font-weight:600;font-size:0.8rem;text-decoration:none;">+ New Order</a>
+					}
+				</div>
+				<table style="width:100%;border-collapse:collapse;">
+					<thead>
+						<tr style="background:var(--surface-secondary);">
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);">Order #</th>
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);">Status</th>
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);">Created</th>
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, o := range data.Orders {
+							<tr style="border-bottom:1px solid var(--border-default);">
+								<td style="padding:12px 14px;font-size:0.875rem;font-family:monospace;">{ o.OrderNumber }</td>
+								<td style="padding:12px 14px;">
+									@OrderStatusBadge(o.Status)
+								</td>
+								<td style="padding:12px 14px;font-size:0.875rem;color:var(--text-secondary);">{ o.CreatedAt.Format("2006-01-02") }</td>
+								<td style="padding:12px 14px;">
+									<a href={ templ.SafeURL("/supplier/orders/" + o.ID.String()) } style="font-size:0.875rem;color:var(--brand-primary);font-weight:500;">View</a>
+								</td>
+							</tr>
+						}
+						if len(data.Orders) == 0 {
+							<tr>
+								<td colspan="4" style="padding:32px;text-align:center;color:var(--text-tertiary);font-size:0.875rem;">No orders found.</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	}
+}
+
+// OrderStatusBadge renders an order status badge.
+templ OrderStatusBadge(status model.OrderStatus) {
+	switch status {
+	case model.OrderStatusCreated:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:#eff6ff;color:#1d4ed8;">CREATED</span>
+	case model.OrderStatusConfirmed:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:#f0fdf4;color:#15803d;">CONFIRMED</span>
+	case model.OrderStatusShipped:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:#f5f3ff;color:#6d28d9;">SHIPPED</span>
+	case model.OrderStatusReceived:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:#fff7ed;color:#c2410c;">RECEIVED</span>
+	case model.OrderStatusQCPassed:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--success-light);color:var(--success);">QC_PASSED</span>
+	case model.OrderStatusQCFailed:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--danger-light);color:var(--danger);">QC_FAILED</span>
+	case model.OrderStatusClosed:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--surface-secondary);color:var(--text-secondary);">CLOSED</span>
+	case model.OrderStatusCancelled:
+		<span style="display:inline-flex;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--danger-light);color:var(--danger);">CANCELLED</span>
+	}
+}

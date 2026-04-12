@@ -1,0 +1,27 @@
+package layouts
+
+templ Auth(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title } — EduExchange</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+			<script src="/static/js/htmx.min.js"></script>
+		</head>
+		<body style="background-color:var(--surface-primary);min-height:100vh;font-family:'Source Sans 3',sans-serif;display:flex;align-items:center;justify-content:center;">
+			<div style="width:100%;max-width:420px;padding:24px;">
+				<!-- Logo / Brand -->
+				<div style="text-align:center;margin-bottom:32px;">
+					<div style="font-size:1.75rem;font-weight:700;color:var(--brand-primary);letter-spacing:-0.5px;">EduExchange</div>
+					<div style="font-size:0.875rem;color:var(--text-tertiary);margin-top:4px;">Learning resource marketplace</div>
+				</div>
+				<!-- Card -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:12px;box-shadow:var(--shadow-md);padding:32px;">
+					{ children... }
+				</div>
+			</div>
+		</body>
+	</html>
+}

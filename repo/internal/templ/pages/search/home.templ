@@ -1,0 +1,83 @@
+package searchpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// HomeData holds all home page data.
+type HomeData struct {
+	Bestsellers     []model.RankingEntry
+	NewReleases     []model.RankingEntry
+	Recommendations []model.RecommendationSection
+	AuthUser        *middleware.AuthUser
+}
+
+func (d HomeData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d HomeData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return string(d.AuthUser.Roles[0])
+	}
+	return ""
+}
+
+// HomePage renders the home page with rankings and personalized recommendations.
+templ HomePage(data HomeData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Home",
+		ActiveRoute: "/",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+			<h1 style="font-size:1.5rem;font-weight:600;color:var(--text-primary);">Dashboard</h1>
+			<a href="/search" style="font-size:0.875rem;color:var(--brand-primary);text-decoration:none;">Search Resources →</a>
+		</div>
+
+		if data.AuthUser != nil && len(data.Recommendations) > 0 {
+			<section style="margin-bottom:32px;">
+				<h2 style="font-size:1.125rem;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Recommended For You</h2>
+				for _, section := range data.Recommendations {
+					@RecommendationSectionCard(section)
+				}
+			</section>
+		}
+
+		<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:24px;">
+			@BestsellerSection(data.Bestsellers)
+			@NewReleaseSection(data.NewReleases)
+		</div>
+	}
+}
+
+// RecommendationSectionCard renders one strategy's resources with its label.
+templ RecommendationSectionCard(section model.RecommendationSection) {
+	<div style="margin-bottom:24px;">
+		<h3 style="font-size:0.875rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">
+			{ section.Label }
+		</h3>
+		if len(section.Resources) == 0 {
+			<p style="font-size:0.875rem;color:var(--text-tertiary);">No recommendations available.</p>
+		} else {
+			<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+				for _, res := range section.Resources {
+					<div style="background:white;border-radius:8px;border:1px solid var(--border-default);box-shadow:0 1px 2px rgba(0,0,0,0.05);padding:16px;">
+						<a href={ templ.SafeURL(fmt.Sprintf("/resources/%s", res.ID)) }
+							style="font-size:0.875rem;font-weight:500;color:var(--brand-primary);text-decoration:none;">
+							{ res.Title }
+						</a>
+						<p style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">by { res.AuthorName }</p>
+					</div>
+				}
+			</div>
+		}
+	</div>
+}

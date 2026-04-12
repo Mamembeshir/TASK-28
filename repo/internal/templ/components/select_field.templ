@@ -1,0 +1,29 @@
+package components
+
+type SelectOption struct {
+	Value string
+	Label string
+}
+
+templ SelectField(label string, name string, options []SelectOption, selected string, errMsg string) {
+	<div class="mb-4">
+		<label for={ name } style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;">
+			{ label }
+		</label>
+		<select
+			id={ name }
+			name={ name }
+			class={ inputClass(errMsg != "") }
+		>
+			<option value="">Select…</option>
+			for _, opt := range options {
+				<option value={ opt.Value } selected?={ opt.Value == selected }>
+					{ opt.Label }
+				</option>
+			}
+		</select>
+		if errMsg != "" {
+			<p style="margin-top:4px;font-size:0.8rem;color:var(--danger);">{ errMsg }</p>
+		}
+	</div>
+}

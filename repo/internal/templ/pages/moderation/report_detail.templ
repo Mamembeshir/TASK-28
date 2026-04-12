@@ -1,0 +1,126 @@
+package moderationpages
+
+import (
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// ReportDetailData holds data for the report detail page.
+type ReportDetailData struct {
+	Report   *model.Report
+	Actions  []model.ModerationAction
+	AuthUser *middleware.AuthUser
+}
+
+func (d ReportDetailData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d ReportDetailData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+// ReportDetailPage renders the report detail view.
+templ ReportDetailPage(data ReportDetailData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Report Detail",
+		ActiveRoute: "/moderation/reports",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<div style="margin-bottom:24px;display:flex;align-items:center;gap:16px;">
+			<a href="/moderation/reports" style="color:var(--text-secondary);text-decoration:none;font-size:0.875rem;">← Back to Queue</a>
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Report Detail</h1>
+		</div>
+		if data.Report != nil {
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+				<!-- Report Info -->
+				<div style="background:var(--surface-elevated);border-radius:8px;padding:20px;border:1px solid var(--border-default);">
+					<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Report Information</h2>
+					<dl style="display:grid;row-gap:12px;">
+						<div>
+							<dt style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px;">Resource</dt>
+							<dd style="font-size:0.875rem;color:var(--text-primary);">{ data.Report.ResourceTitle }</dd>
+						</div>
+						<div>
+							<dt style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px;">Reporter</dt>
+							<dd style="font-size:0.875rem;color:var(--text-primary);">{ data.Report.ReporterName }</dd>
+						</div>
+						<div>
+							<dt style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px;">Reason</dt>
+							<dd style="font-size:0.875rem;color:var(--text-primary);">{ data.Report.ReasonType }</dd>
+						</div>
+						<div>
+							<dt style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px;">Status</dt>
+							<dd>
+								@reportStatusBadge(data.Report.Status)
+							</dd>
+						</div>
+						<div>
+							<dt style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px;">Description</dt>
+							<dd style="font-size:0.875rem;color:var(--text-secondary);">{ data.Report.Description }</dd>
+						</div>
+						if data.Report.ReviewerName != "" {
+							<div>
+								<dt style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px;">Reviewer</dt>
+								<dd style="font-size:0.875rem;color:var(--text-primary);">{ data.Report.ReviewerName }</dd>
+							</div>
+						}
+						if data.Report.Notes != "" {
+							<div>
+								<dt style="font-size:0.75rem;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:2px;">Notes</dt>
+								<dd style="font-size:0.875rem;color:var(--text-secondary);">{ data.Report.Notes }</dd>
+							</div>
+						}
+					</dl>
+				</div>
+				<!-- Resolve Form -->
+				<div style="background:var(--surface-elevated);border-radius:8px;padding:20px;border:1px solid var(--border-default);">
+					<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Take Action</h2>
+					if data.Report.Status == "UNDER_REVIEW" {
+						<form hx-post={ "/moderation/reports/" + data.Report.ID.String() + "/resolve" } hx-swap="none" style="display:flex;flex-direction:column;gap:12px;">
+							<div>
+								<label style="font-size:0.875rem;font-weight:500;color:var(--text-primary);display:block;margin-bottom:4px;">Action</label>
+								<select name="action_type" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border-default);background:var(--surface-primary);color:var(--text-primary);font-size:0.875rem;">
+									<option value="APPROVE">Approve (no action needed)</option>
+									<option value="TAKEDOWN">Takedown resource</option>
+									<option value="WARN">Warn author</option>
+								</select>
+							</div>
+							<div>
+								<label style="font-size:0.875rem;font-weight:500;color:var(--text-primary);display:block;margin-bottom:4px;">Notes</label>
+								<textarea name="notes" rows="3" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border-default);background:var(--surface-primary);color:var(--text-primary);font-size:0.875rem;resize:vertical;"></textarea>
+							</div>
+							<div>
+								<label style="font-size:0.875rem;font-weight:500;color:var(--text-primary);display:block;margin-bottom:4px;">Evidence</label>
+								<textarea name="evidence" rows="2" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border-default);background:var(--surface-primary);color:var(--text-primary);font-size:0.875rem;resize:vertical;"></textarea>
+							</div>
+							<button type="submit" style="padding:8px 16px;background:var(--accent-primary);color:white;border:none;border-radius:6px;font-size:0.875rem;cursor:pointer;font-weight:500;">Resolve Report</button>
+						</form>
+						<form hx-post={ "/moderation/reports/" + data.Report.ID.String() + "/dismiss" } hx-swap="none" style="margin-top:12px;">
+							<input type="hidden" name="notes" value="Dismissed as invalid"/>
+							<button type="submit" style="padding:8px 16px;background:var(--surface-primary);color:var(--text-secondary);border:1px solid var(--border-default);border-radius:6px;font-size:0.875rem;cursor:pointer;font-weight:500;">Dismiss Report</button>
+						</form>
+					} else if data.Report.Status == "OPEN" {
+						<form hx-post={ "/moderation/reports/" + data.Report.ID.String() + "/assign" } hx-swap="none">
+							<button type="submit" style="padding:8px 16px;background:var(--accent-primary);color:white;border:none;border-radius:6px;font-size:0.875rem;cursor:pointer;font-weight:500;">Assign to Me</button>
+						</form>
+					} else {
+						<p style="color:var(--text-tertiary);font-size:0.875rem;">This report has been { data.Report.Status }.</p>
+					}
+				</div>
+			</div>
+			<!-- Evidence Chain -->
+			<div style="margin-top:24px;background:var(--surface-elevated);border-radius:8px;padding:20px;border:1px solid var(--border-default);">
+				@EvidenceChain(data.Actions)
+			</div>
+		}
+	}
+}

@@ -1,0 +1,86 @@
+package supplierpages
+
+import (
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+	"github.com/google/uuid"
+)
+
+// OrderFormData holds data for the create order form.
+type OrderFormData struct {
+	SupplierID uuid.UUID
+	AuthUser   *middleware.AuthUser
+}
+
+func (d OrderFormData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d OrderFormData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+// OrderFormPage renders the create order form.
+templ OrderFormPage(data OrderFormData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "New Order",
+		ActiveRoute: "/supplier/orders",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<div style="margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;">
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Create New Order</h1>
+			<a href="/supplier/orders" style="font-size:0.875rem;color:var(--brand-primary);">← Back to Orders</a>
+		</div>
+
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;">
+			<form method="POST" action="/supplier/orders" id="order-form">
+				<input type="hidden" name="supplier_id" value={ data.SupplierID.String() }/>
+
+				<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:16px;">Order Lines</h2>
+
+				<div id="order-lines-container">
+					@orderLine(1)
+					@orderLine(2)
+					@orderLine(3)
+				</div>
+
+				<div style="margin-top:24px;display:flex;gap:12px;">
+					<button type="submit" style="padding:8px 18px;background:var(--brand-primary);color:white;border:none;border-radius:6px;font-weight:600;font-size:0.875rem;cursor:pointer;">
+						Create Order
+					</button>
+					<a href="/supplier/orders" style="padding:8px 18px;background:white;color:var(--brand-primary);border:1px solid var(--brand-primary);border-radius:6px;font-weight:600;font-size:0.875rem;text-decoration:none;display:inline-flex;align-items:center;">
+						Cancel
+					</a>
+				</div>
+			</form>
+		</div>
+	}
+}
+
+templ orderLine(idx int) {
+	<div style="display:grid;grid-template-columns:1fr 2fr 80px 120px;gap:12px;margin-bottom:12px;padding:12px;background:var(--surface-secondary);border-radius:6px;">
+		<div>
+			<label style="display:block;font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">SKU</label>
+			<input type="text" name="sku" placeholder="SKU-001" style="width:100%;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:0.875rem;background:white;"/>
+		</div>
+		<div>
+			<label style="display:block;font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Description</label>
+			<input type="text" name="description" placeholder="Product description" style="width:100%;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:0.875rem;background:white;"/>
+		</div>
+		<div>
+			<label style="display:block;font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Qty</label>
+			<input type="number" name="quantity" min="1" value="1" style="width:100%;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:0.875rem;background:white;"/>
+		</div>
+		<div>
+			<label style="display:block;font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">Unit Price</label>
+			<input type="number" name="unit_price" min="0" step="0.01" value="0.00" style="width:100%;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:0.875rem;background:white;"/>
+		</div>
+	</div>
+}

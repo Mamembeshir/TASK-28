@@ -1,0 +1,80 @@
+package supplierpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// OrderListData holds data for the supplier orders list page.
+type OrderListData struct {
+	Orders   []model.SupplierOrder
+	Total    int
+	Page     int
+	AuthUser *middleware.AuthUser
+}
+
+func (d OrderListData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d OrderListData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+// OrderListPage renders the list of supplier orders.
+templ OrderListPage(data OrderListData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Orders",
+		ActiveRoute: "/supplier/orders",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Orders</h1>
+			<span style="font-size:0.875rem;color:var(--text-secondary);">{ fmt.Sprintf("%d total", data.Total) }</span>
+		</div>
+		<div style="background:white;border-radius:12px;border:1px solid var(--border-default);box-shadow:0 1px 2px rgba(0,0,0,0.05);overflow:hidden;">
+			if len(data.Orders) == 0 {
+				<div style="padding:48px;text-align:center;color:var(--text-tertiary);">
+					<p style="font-size:1rem;font-weight:500;">No orders found</p>
+				</div>
+			} else {
+				<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+					<thead style="background:var(--surface-secondary);border-bottom:1px solid var(--border-default);">
+						<tr>
+							<th style="text-align:left;padding:12px 16px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Order #</th>
+							<th style="text-align:left;padding:12px 16px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Supplier</th>
+							<th style="text-align:left;padding:12px 16px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Status</th>
+							<th style="text-align:left;padding:12px 16px;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Created</th>
+							<th style="padding:12px 16px;"></th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, o := range data.Orders {
+							<tr style="border-bottom:1px solid var(--border-default);">
+								<td style="padding:12px 16px;font-weight:600;color:var(--text-primary);">{ o.OrderNumber }</td>
+								<td style="padding:12px 16px;color:var(--text-secondary);">{ o.SupplierName }</td>
+								<td style="padding:12px 16px;">
+									@OrderStatusBadge(o.Status)
+								</td>
+								<td style="padding:12px 16px;color:var(--text-secondary);">{ o.CreatedAt.Format("Jan 2, 2006") }</td>
+								<td style="padding:12px 16px;text-align:right;">
+									<a href={ templ.SafeURL(fmt.Sprintf("/supplier/orders/%s", o.ID)) }
+										style="font-size:0.875rem;color:var(--brand-primary);text-decoration:none;">View →</a>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</div>
+	}
+}

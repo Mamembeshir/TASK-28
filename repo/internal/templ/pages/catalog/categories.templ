@@ -1,0 +1,96 @@
+package catalogpages
+
+import (
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+type CategoryListData struct {
+	Categories []model.Category
+	AuthUser   *middleware.AuthUser
+}
+
+func (d CategoryListData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d CategoryListData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+templ CategoryListPage(data CategoryListData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Categories",
+		ActiveRoute: "/categories",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		@components.PageHeader("Categories", []components.Breadcrumb{
+			{Label: "Categories"},
+		})
+		<div style="display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:start;">
+			<!-- Category tree -->
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);">
+				if len(data.Categories) == 0 {
+					@components.EmptyState("categories", "No categories", "Create your first category.", "", "")
+				} else {
+					<div style="display:flex;flex-direction:column;gap:8px;">
+						for _, cat := range data.Categories {
+							<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface-secondary);border-radius:8px;">
+								<div>
+									<span style="font-weight:500;">{ cat.Name }</span>
+									<span style="font-size:0.75rem;color:var(--text-tertiary);margin-left:8px;">Level { string(rune('0'+cat.Level)) }</span>
+								</div>
+								<button
+									hx-delete={ "/categories/" + cat.ID.String() }
+									hx-target="closest div[style*=flex-direction]"
+									hx-swap="outerHTML"
+									hx-confirm={ "Delete category '" + cat.Name + "'?" }
+									style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:0.8rem;"
+								>Delete</button>
+							</div>
+						}
+					</div>
+				}
+			</div>
+			<!-- Create form -->
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);">
+				<h3 style="font-size:0.875rem;font-weight:600;margin:0 0 16px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">New Category</h3>
+				<form
+					hx-post="/categories"
+					hx-push-url="true"
+					style="display:flex;flex-direction:column;gap:14px;"
+				>
+					<div>
+						<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Name *</label>
+						<input class="ee-input" type="text" name="name" placeholder="Category name…" maxlength="150"/>
+					</div>
+					<div>
+						<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Parent Category</label>
+						<select class="ee-input" name="parent_id">
+							<option value="">None (top-level)</option>
+							for _, cat := range data.Categories {
+								if cat.Level < 3 {
+									<option value={ cat.ID.String() }>{ cat.Name }</option>
+								}
+							}
+						</select>
+					</div>
+					<div>
+						<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Sort Order</label>
+						<input class="ee-input" type="number" name="sort_order" value="0" min="0"/>
+					</div>
+					<button type="submit" class="ee-btn ee-btn--primary">Create Category</button>
+				</form>
+			</div>
+		</div>
+	}
+}

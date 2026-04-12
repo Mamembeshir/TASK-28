@@ -1,0 +1,24 @@
+package components
+
+templ Badge(status string, text string) {
+	<span class={ badgeClass(status) }>{ text }</span>
+}
+
+func badgeClass(status string) string {
+	switch status {
+	case "ACTIVE", "APPROVED", "PUBLISHED", "GOLD", "QC_PASSED", "DELIVERED", "CLOSED":
+		return "ee-badge ee-badge--success"
+	case "PENDING", "PENDING_REVIEW", "UNDER_REVIEW", "SILVER", "CONFIRMED", "PROCESSING":
+		return "ee-badge ee-badge--warning"
+	case "REJECTED", "BANNED", "SUSPENDED", "QC_FAILED", "FAILED", "TAKEN_DOWN", "CANCELLED":
+		return "ee-badge ee-badge--danger"
+	case "BRONZE":
+		return "ee-badge ee-badge--bronze"
+	case "DRAFT", "CREATED":
+		return "ee-badge ee-badge--neutral"
+	case "DEACTIVATED":
+		return "ee-badge ee-badge--muted"
+	default:
+		return "ee-badge ee-badge--neutral"
+	}
+}

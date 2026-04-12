@@ -1,0 +1,26 @@
+package components
+
+import "fmt"
+
+templ TextArea(label string, name string, value string, errMsg string, maxLen int) {
+	<div class="mb-4">
+		<label for={ name } style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;">
+			{ label }
+		</label>
+		<textarea
+			id={ name }
+			name={ name }
+			class={ inputClass(errMsg != "") }
+			rows="4"
+			if maxLen > 0 {
+				maxlength={ fmt.Sprintf("%d", maxLen) }
+			}
+		>{ value }</textarea>
+		if maxLen > 0 {
+			<p style="margin-top:4px;font-size:0.75rem;color:var(--text-tertiary);">Max { fmt.Sprintf("%d", maxLen) } characters</p>
+		}
+		if errMsg != "" {
+			<p style="margin-top:4px;font-size:0.8rem;color:var(--danger);">{ errMsg }</p>
+		}
+	</div>
+}

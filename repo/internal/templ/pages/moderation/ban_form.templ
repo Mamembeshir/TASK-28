@@ -1,0 +1,87 @@
+package moderationpages
+
+import (
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+	"github.com/google/uuid"
+)
+
+// BanFormData holds data for the ban form page.
+type BanFormData struct {
+	TargetUserID   uuid.UUID
+	TargetUsername string
+	AuthUser       *middleware.AuthUser
+}
+
+func (d BanFormData) banFormUsername() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d BanFormData) banFormUserRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+func (d BanFormData) isAdmin() bool {
+	if d.AuthUser == nil {
+		return false
+	}
+	for _, r := range d.AuthUser.Roles {
+		if r == "ADMIN" {
+			return true
+		}
+	}
+	return false
+}
+
+// BanFormPage renders the ban form.
+templ BanFormPage(data BanFormData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Ban User",
+		ActiveRoute: "/moderation",
+		Username:    data.banFormUsername(),
+		UserRole:    data.banFormUserRole(),
+	}) {
+		<div style="max-width:480px;margin:0 auto;">
+			<div style="margin-bottom:24px;">
+				<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Ban User</h1>
+				<p style="font-size:0.875rem;color:var(--text-secondary);margin-top:4px;">User: { data.TargetUsername }</p>
+			</div>
+			<div style="background:var(--surface-elevated);border-radius:8px;padding:24px;border:1px solid var(--border-default);">
+				<form
+					hx-post={ "/moderation/users/" + data.TargetUserID.String() + "/ban" }
+					hx-swap="none"
+					style="display:flex;flex-direction:column;gap:16px;">
+					<div>
+						<label style="font-size:0.875rem;font-weight:500;color:var(--text-primary);display:block;margin-bottom:6px;">Ban Duration</label>
+						<select name="ban_type" style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border-default);background:var(--surface-primary);color:var(--text-primary);font-size:0.875rem;">
+							<option value="1_DAY">1 Day</option>
+							<option value="7_DAYS">7 Days</option>
+							if data.isAdmin() {
+								<option value="PERMANENT">Permanent</option>
+							}
+						</select>
+					</div>
+					<div>
+						<label style="font-size:0.875rem;font-weight:500;color:var(--text-primary);display:block;margin-bottom:6px;">Reason</label>
+						<textarea
+							name="reason"
+							rows="4"
+							placeholder="Describe the reason for this ban..."
+							style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border-default);background:var(--surface-primary);color:var(--text-primary);font-size:0.875rem;resize:vertical;"></textarea>
+					</div>
+					<button
+						type="submit"
+						style="padding:10px 20px;background:#DC2626;color:white;border:none;border-radius:6px;font-size:0.875rem;cursor:pointer;font-weight:600;">
+						Apply Ban
+					</button>
+				</form>
+			</div>
+		</div>
+	}
+}

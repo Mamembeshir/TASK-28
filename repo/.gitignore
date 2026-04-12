@@ -1,0 +1,51 @@
+# ── Binaries ──────────────────────────────────────────────────────────────────
+eduexchange
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ── Go toolchain ──────────────────────────────────────────────────────────────
+*.test
+*.out
+coverage.out
+coverage.html
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Runtime data (created by app / Docker volumes) ───────────────────────────
+data/uploads/
+data/exports/
+data/statements/
+data/imports/
+
+# ── Generated files ───────────────────────────────────────────────────────────
+# Templ generates *_templ.go alongside each *.templ file.
+# Commit the generated files so the repo builds without the templ CLI.
+# Uncomment the line below only if you prefer to gitignore generated files:
+# *_templ.go
+
+# Tailwind generated CSS (committed for reproducible builds)
+# static/css/app.css
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+.dockerignore.local
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+tests/integration/data/
+tests/frontend/data/
+
+# ── Dependency cache ──────────────────────────────────────────────────────────
+vendor/

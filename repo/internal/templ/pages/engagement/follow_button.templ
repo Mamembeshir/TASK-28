@@ -1,0 +1,43 @@
+package engagementpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/google/uuid"
+)
+
+// FollowData holds follow state for rendering the follow toggle.
+type FollowData struct {
+	TargetID   uuid.UUID
+	TargetType model.FollowTargetType
+	IsFollowed bool
+}
+
+// FollowButton renders an HTMX follow/unfollow toggle button.
+templ FollowButton(d FollowData) {
+	<button
+		id={ fmt.Sprintf("follow-%s-%s", d.TargetType, d.TargetID) }
+		if d.IsFollowed {
+			hx-delete={ fmt.Sprintf("/follows?target_type=%s&target_id=%s", d.TargetType, d.TargetID) }
+		} else {
+			hx-post="/follows"
+			hx-vals={ fmt.Sprintf(`{"target_type":"%s","target_id":"%s"}`, d.TargetType, d.TargetID) }
+		}
+		hx-target={ fmt.Sprintf("#follow-%s-%s", d.TargetType, d.TargetID) }
+		hx-swap="outerHTML"
+		class={ followButtonClass(d.IsFollowed) }
+	>
+		if d.IsFollowed {
+			Following
+		} else {
+			+ Follow
+		}
+	</button>
+}
+
+func followButtonClass(active bool) string {
+	if active {
+		return "px-4 py-1.5 rounded-full border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+	}
+	return "px-4 py-1.5 rounded-full bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors"
+}

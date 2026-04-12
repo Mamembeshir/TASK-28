@@ -1,0 +1,82 @@
+package components
+
+import "fmt"
+
+templ Pagination(currentPage int, totalPages int, baseURL string) {
+	if totalPages > 1 {
+		<nav class="flex items-center justify-center gap-1 mt-6" aria-label="Pagination">
+			if currentPage > 1 {
+				<a
+					href={ templ.SafeURL(fmt.Sprintf("%s?page=%d", baseURL, currentPage-1)) }
+					hx-get={ fmt.Sprintf("%s?page=%d", baseURL, currentPage-1) }
+					hx-target="#content-area"
+					hx-swap="innerHTML"
+					class="px-3 py-2 text-sm font-medium text-[var(--text-secondary)] border border-[var(--border-default)] rounded-[6px] hover:bg-[var(--surface-secondary)] transition-colors"
+				>
+					Previous
+				</a>
+			}
+			for _, p := range paginationRange(currentPage, totalPages) {
+				if p == -1 {
+					<span class="px-3 py-2 text-sm text-[var(--text-tertiary)]">…</span>
+				} else if p == currentPage {
+					<span class="px-3 py-2 text-sm font-semibold bg-[var(--brand-primary)] text-white rounded-[6px]">
+						{ fmt.Sprintf("%d", p) }
+					</span>
+				} else {
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("%s?page=%d", baseURL, p)) }
+						hx-get={ fmt.Sprintf("%s?page=%d", baseURL, p) }
+						hx-target="#content-area"
+						hx-swap="innerHTML"
+						class="px-3 py-2 text-sm font-medium text-[var(--text-secondary)] border border-[var(--border-default)] rounded-[6px] hover:bg-[var(--surface-secondary)] transition-colors"
+					>
+						{ fmt.Sprintf("%d", p) }
+					</a>
+				}
+			}
+			if currentPage < totalPages {
+				<a
+					href={ templ.SafeURL(fmt.Sprintf("%s?page=%d", baseURL, currentPage+1)) }
+					hx-get={ fmt.Sprintf("%s?page=%d", baseURL, currentPage+1) }
+					hx-target="#content-area"
+					hx-swap="innerHTML"
+					class="px-3 py-2 text-sm font-medium text-[var(--text-secondary)] border border-[var(--border-default)] rounded-[6px] hover:bg-[var(--surface-secondary)] transition-colors"
+				>
+					Next
+				</a>
+			}
+		</nav>
+	}
+}
+
+func paginationRange(current, total int) []int {
+	if total <= 7 {
+		pages := make([]int, total)
+		for i := range pages {
+			pages[i] = i + 1
+		}
+		return pages
+	}
+	var pages []int
+	pages = append(pages, 1)
+	if current > 3 {
+		pages = append(pages, -1)
+	}
+	start := current - 1
+	if start < 2 {
+		start = 2
+	}
+	end := current + 1
+	if end > total-1 {
+		end = total - 1
+	}
+	for i := start; i <= end; i++ {
+		pages = append(pages, i)
+	}
+	if current < total-2 {
+		pages = append(pages, -1)
+	}
+	pages = append(pages, total)
+	return pages
+}

@@ -1,0 +1,32 @@
+package components
+
+templ Table(headers []string) {
+	<div style="overflow-x:auto;">
+		<table style="width:100%;border-collapse:collapse;">
+			<thead>
+				<tr style="background:var(--surface-secondary);position:sticky;top:0;">
+					for _, h := range headers {
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);white-space:nowrap;">
+							{ h }
+						</th>
+					}
+				</tr>
+			</thead>
+			<tbody style="background:var(--surface-elevated);">
+				{ children... }
+			</tbody>
+		</table>
+	</div>
+}
+
+templ TableRow() {
+	<tr style="border-bottom:1px solid var(--border-default);" onmouseover="this.style.background='var(--surface-secondary)'" onmouseout="this.style.background=''">
+		{ children... }
+	</tr>
+}
+
+templ TableCell() {
+	<td style="padding:12px 16px;font-size:0.875rem;color:var(--text-primary);">
+		{ children... }
+	</td>
+}

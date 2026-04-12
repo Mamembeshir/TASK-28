@@ -1,0 +1,162 @@
+package adminpages
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+type UserDetailData struct {
+	model.UserWithRoles
+	Username string
+	Flash    string
+}
+
+// allowedTransitions mirrors PRD 9.1.
+func allowedTransitions(from model.UserStatus) []model.UserStatus {
+	switch from {
+	case model.UserStatusActive:
+		return []model.UserStatus{model.UserStatusSuspended, model.UserStatusBanned, model.UserStatusDeactivated}
+	case model.UserStatusSuspended:
+		return []model.UserStatus{model.UserStatusActive, model.UserStatusDeactivated}
+	case model.UserStatusBanned:
+		return []model.UserStatus{model.UserStatusActive}
+	default:
+		return nil // terminal
+	}
+}
+
+func hasRole(roles []model.Role, r model.Role) bool {
+	for _, existing := range roles {
+		if existing == r {
+			return true
+		}
+	}
+	return false
+}
+
+templ UserDetailPage(data UserDetailData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "User: " + data.User.Username,
+		ActiveRoute: "/admin/users",
+		Username:    data.Username,
+		UserRole:    "ADMIN",
+	}) {
+		@components.PageHeader("User Detail", []components.Breadcrumb{
+			{Label: "Users", URL: "/admin/users"},
+			{Label: data.User.Username},
+		})
+		<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+			<!-- Left: Profile card -->
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);">
+				<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 16px;">Profile</h2>
+				<div style="display:flex;flex-direction:column;gap:12px;">
+					<div>
+						<span style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-tertiary);">Username</span>
+						<p style="margin:2px 0 0;font-size:0.875rem;font-weight:500;color:var(--text-primary);">{ data.User.Username }</p>
+					</div>
+					<div>
+						<span style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-tertiary);">Email</span>
+						<p style="margin:2px 0 0;font-size:0.875rem;color:var(--text-primary);">{ data.User.Email }</p>
+					</div>
+					<div>
+						<span style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-tertiary);">Display Name</span>
+						<p style="margin:2px 0 0;font-size:0.875rem;color:var(--text-primary);">{ data.Profile.DisplayName }</p>
+					</div>
+					<div>
+						<span style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-tertiary);">Status</span>
+						<p style="margin:4px 0 0;">
+							@components.Badge(data.User.Status.String(), data.User.Status.String())
+						</p>
+					</div>
+					<div>
+						<span style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-tertiary);">Version</span>
+						<p style="margin:2px 0 0;font-size:0.875rem;color:var(--text-secondary);">{ strconv.Itoa(data.User.Version) }</p>
+					</div>
+					if data.User.IsLocked() {
+						<div style="background:var(--warning-light);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;">
+							<span style="font-size:0.8rem;font-weight:600;color:var(--warning);">⚠ Account locked (too many failed logins)</span>
+							<form
+								hx-post={ fmt.Sprintf("/admin/users/%s/unlock", data.User.ID.String()) }
+								hx-target="body"
+								hx-swap="outerHTML"
+								style="margin-top:8px;"
+							>
+								<button type="submit" class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:4px 12px;">Unlock Account</button>
+							</form>
+						</div>
+					}
+				</div>
+			</div>
+			<!-- Right: Status transitions -->
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);">
+				<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 16px;">Status Actions</h2>
+				if len(allowedTransitions(data.User.Status)) == 0 {
+					<p style="font-size:0.875rem;color:var(--text-tertiary);">No transitions available. This account status is terminal.</p>
+				} else {
+					<div style="display:flex;flex-direction:column;gap:10px;">
+						for _, target := range allowedTransitions(data.User.Status) {
+							<form
+								hx-post={ fmt.Sprintf("/admin/users/%s/status", data.User.ID.String()) }
+								hx-target="body"
+								hx-swap="outerHTML"
+							>
+								<input type="hidden" name="status" value={ target.String() }/>
+								<input type="hidden" name="version" value={ strconv.Itoa(data.User.Version) }/>
+								<button type="submit" class={ statusButtonClass(target) } style="width:100%;justify-content:center;">
+									→ { target.String() }
+								</button>
+							</form>
+						}
+					</div>
+				}
+			</div>
+		</div>
+		<!-- Roles card -->
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);margin-top:24px;">
+			<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 16px;">Roles</h2>
+			<div style="display:flex;flex-direction:column;gap:8px;">
+				for _, r := range []model.Role{model.RoleRegularUser, model.RoleAuthor, model.RoleReviewer, model.RoleSupplier, model.RoleAdmin} {
+					<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface-secondary);border-radius:6px;">
+						<span style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">{ r.String() }</span>
+						if hasRole(data.Roles, r) {
+							<form
+								hx-post={ fmt.Sprintf("/admin/users/%s/roles/remove", data.User.ID.String()) }
+								hx-target="body"
+								hx-swap="outerHTML"
+							>
+								<input type="hidden" name="role" value={ r.String() }/>
+								<button type="submit" class="ee-btn ee-btn--danger" style="font-size:0.8rem;padding:4px 12px;">Remove</button>
+							</form>
+						} else {
+							<form
+								hx-post={ fmt.Sprintf("/admin/users/%s/roles/assign", data.User.ID.String()) }
+								hx-target="body"
+								hx-swap="outerHTML"
+							>
+								<input type="hidden" name="role" value={ r.String() }/>
+								<button type="submit" class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:4px 12px;">Assign</button>
+							</form>
+						}
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+func statusButtonClass(s model.UserStatus) string {
+	switch s {
+	case model.UserStatusSuspended:
+		return "ee-btn ee-btn--secondary"
+	case model.UserStatusBanned, model.UserStatusDeactivated:
+		return "ee-btn ee-btn--danger"
+	case model.UserStatusActive:
+		return "ee-btn ee-btn--primary"
+	default:
+		return "ee-btn ee-btn--secondary"
+	}
+}

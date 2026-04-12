@@ -1,0 +1,31 @@
+package components
+
+type Breadcrumb struct {
+	Label string
+	URL   string
+}
+
+templ PageHeader(title string, breadcrumbs []Breadcrumb) {
+	<div style="margin-bottom:28px;">
+		if len(breadcrumbs) > 0 {
+			<nav style="display:flex;align-items:center;gap:4px;font-size:0.875rem;color:var(--text-tertiary);margin-bottom:8px;" aria-label="Breadcrumb">
+				for i, crumb := range breadcrumbs {
+					if i > 0 {
+						<span style="margin:0 4px;">/</span>
+					}
+					if crumb.URL != "" {
+						<a href={ templ.SafeURL(crumb.URL) } style="color:var(--text-tertiary);text-decoration:none;" onmouseover="this.style.color='var(--brand-primary)'" onmouseout="this.style.color='var(--text-tertiary)'">{ crumb.Label }</a>
+					} else {
+						<span style="color:var(--text-primary);font-weight:500;">{ crumb.Label }</span>
+					}
+				}
+			</nav>
+		}
+		<div style="display:flex;align-items:center;justify-content:space-between;">
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);margin:0;">{ title }</h1>
+			<div>
+				{ children... }
+			</div>
+		</div>
+	</div>
+}

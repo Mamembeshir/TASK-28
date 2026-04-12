@@ -1,0 +1,25 @@
+# Don't copy these into Docker build context
+.git
+.gitignore
+.env
+.env.local
+.env.*.local
+
+# Runtime data
+data/uploads/
+data/exports/
+data/statements/
+data/imports/
+
+# Test outputs
+coverage.out
+coverage.html
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Compiled binaries
+eduexchange
+*.exe

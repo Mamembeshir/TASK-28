@@ -1,0 +1,181 @@
+package catalogpages
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+type ImportWizardData struct {
+	Step     int // 1=upload, 2=preview, 3=done
+	Job      *model.BulkImportJob
+	AuthUser *middleware.AuthUser
+}
+
+func (d ImportWizardData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d ImportWizardData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+templ ImportWizardPage(data ImportWizardData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Bulk Import",
+		ActiveRoute: "/import",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		@components.PageHeader("Bulk Import", []components.Breadcrumb{
+			{Label: fmt.Sprintf("Step %d of 3", data.Step)},
+		})
+		<!-- Step indicator -->
+		<div style="display:flex;gap:0;margin-bottom:32px;align-items:center;">
+			@wizardStep(1, "Upload", data.Step)
+			<div style="width:40px;height:1px;background:var(--border-default);margin:0 4px;"></div>
+			@wizardStep(2, "Preview", data.Step)
+			<div style="width:40px;height:1px;background:var(--border-default);margin:0 4px;"></div>
+			@wizardStep(3, "Done", data.Step)
+		</div>
+		if data.Step == 1 {
+			@importStep1()
+		}
+		if data.Step == 2 && data.Job != nil {
+			@importStep2(data.Job)
+		}
+		if data.Step == 3 && data.Job != nil {
+			@importStep3(data.Job)
+		}
+	}
+}
+
+templ wizardStep(n int, label string, current int) {
+	<div style="display:inline-flex;align-items:center;gap:8px;">
+		if n < current {
+			<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:0.8rem;font-weight:600;background:var(--brand-primary);color:#fff;">{ strconv.Itoa(n) }</div>
+		} else if n == current {
+			<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:0.8rem;font-weight:600;background:var(--brand-primary);color:#fff;box-shadow:0 0 0 3px var(--brand-primary-light);">{ strconv.Itoa(n) }</div>
+		} else {
+			<div style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:0.8rem;font-weight:600;background:var(--surface-secondary);color:var(--text-tertiary);border:1px solid var(--border-default);">{ strconv.Itoa(n) }</div>
+		}
+		<span style="font-size:0.8rem;">{ label }</span>
+	</div>
+}
+
+templ importStep1() {
+	<div style="max-width:520px;">
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:28px;box-shadow:var(--shadow-sm);">
+			<h2 style="font-size:1rem;font-weight:600;margin:0 0 8px;">Upload CSV File</h2>
+			<p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:20px;">
+				Upload a CSV file with columns: <code>title</code> (required), <code>category</code>, <code>tags</code> (comma-separated).
+				Maximum 500 rows, 25 MB.
+			</p>
+			<form
+				hx-post="/import/upload"
+				hx-encoding="multipart/form-data"
+				hx-push-url="true"
+				style="display:flex;flex-direction:column;gap:16px;"
+			>
+				<div>
+					<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">CSV File *</label>
+					<input type="file" name="file" accept=".csv,text/csv" class="ee-input"/>
+				</div>
+				<button type="submit" class="ee-btn ee-btn--primary">Upload &amp; Validate</button>
+			</form>
+		</div>
+	</div>
+}
+
+templ importStep2(job *model.BulkImportJob) {
+	<div>
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);margin-bottom:20px;">
+			<h2 style="font-size:1rem;font-weight:600;margin:0 0 12px;">Preview: { job.OriginalFilename }</h2>
+			<div style="display:flex;gap:24px;margin-bottom:20px;">
+				<div style="text-align:center;">
+					<div style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">{ strconv.Itoa(job.TotalRows) }</div>
+					<div style="font-size:0.75rem;color:var(--text-tertiary);">Total rows</div>
+				</div>
+				<div style="text-align:center;">
+					<div style="font-size:1.5rem;font-weight:700;color:var(--color-success);">{ strconv.Itoa(job.ValidRows) }</div>
+					<div style="font-size:0.75rem;color:var(--text-tertiary);">Valid</div>
+				</div>
+				<div style="text-align:center;">
+					<div style="font-size:1.5rem;font-weight:700;color:var(--color-error);">{ strconv.Itoa(job.InvalidRows) }</div>
+					<div style="font-size:0.75rem;color:var(--text-tertiary);">Errors</div>
+				</div>
+			</div>
+			if job.ValidRows > 0 {
+				<form method="POST" action={ templ.SafeURL("/import/" + job.ID.String() + "/confirm") } style="display:inline-flex;gap:12px;align-items:center;">
+					<button type="submit" class="ee-btn ee-btn--primary">Import { strconv.Itoa(job.ValidRows) } Valid Rows</button>
+					<a href="/import" class="ee-btn ee-btn--secondary">Cancel</a>
+				</form>
+			} else {
+				<div>
+					<p style="color:var(--color-error);font-size:0.875rem;">No valid rows to import. Please fix the errors and try again.</p>
+					<a href="/import" class="ee-btn ee-btn--secondary" style="margin-top:12px;">Start Over</a>
+				</div>
+			}
+		</div>
+		<!-- Row details -->
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;overflow:hidden;box-shadow:var(--shadow-sm);">
+			<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+				<thead>
+					<tr style="background:var(--surface-secondary);">
+						<th style="padding:10px 14px;text-align:left;font-weight:600;color:var(--text-secondary);">#</th>
+						<th style="padding:10px 14px;text-align:left;font-weight:600;color:var(--text-secondary);">Status</th>
+						<th style="padding:10px 14px;text-align:left;font-weight:600;color:var(--text-secondary);">Title</th>
+						<th style="padding:10px 14px;text-align:left;font-weight:600;color:var(--text-secondary);">Category</th>
+						<th style="padding:10px 14px;text-align:left;font-weight:600;color:var(--text-secondary);">Tags</th>
+						<th style="padding:10px 14px;text-align:left;font-weight:600;color:var(--text-secondary);">Errors</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, row := range job.Results {
+						<tr style="border-top:1px solid var(--border-default);">
+							<td style="padding:10px 14px;color:var(--text-tertiary);">{ strconv.Itoa(row.Row) }</td>
+							<td style="padding:10px 14px;">
+								if row.Status == "VALID" {
+									<span style="color:var(--color-success);font-weight:600;">✓ Valid</span>
+								} else {
+									<span style="color:var(--color-error);font-weight:600;">✗ Error</span>
+								}
+							</td>
+							<td style="padding:10px 14px;">{ row.Title }</td>
+							<td style="padding:10px 14px;">{ row.Category }</td>
+							<td style="padding:10px 14px;">{ row.Tags }</td>
+							<td style="padding:10px 14px;color:var(--color-error);">
+								for _, e := range row.Errors {
+									<div>{ e.Field }: { e.Message }</div>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ importStep3(job *model.BulkImportJob) {
+	<div style="max-width:520px;">
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:28px;box-shadow:var(--shadow-sm);text-align:center;">
+			<div style="font-size:3rem;margin-bottom:12px;">✓</div>
+			<h2 style="font-size:1.1rem;font-weight:600;margin:0 0 8px;">Import Complete</h2>
+			<p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:20px;">
+				{ strconv.Itoa(job.ValidRows) } resources were created as drafts from <strong>{ job.OriginalFilename }</strong>.
+			</p>
+			<a href="/resources" class="ee-btn ee-btn--primary">View Resources</a>
+		</div>
+	</div>
+}

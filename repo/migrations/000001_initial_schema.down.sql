@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS rate_limit_counters;
+DROP TABLE IF EXISTS idempotency_records;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS user_roles;
+DROP TABLE IF EXISTS user_profiles;
+DROP TABLE IF EXISTS users;
+DROP EXTENSION IF EXISTS pg_trgm;
+DROP EXTENSION IF EXISTS "uuid-ossp";

@@ -1,0 +1,152 @@
+package catalogpages
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	catalogrepo "github.com/eduexchange/eduexchange/internal/repository/catalog"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+type ResourceListData struct {
+	Resources  []model.Resource
+	Total      int
+	Page       int
+	PageSize   int
+	Filter     catalogrepo.ResourceFilter
+	Categories []model.Category
+	Tags       []model.Tag
+	AuthUser   *middleware.AuthUser
+}
+
+func (d ResourceListData) totalPages() int {
+	if d.PageSize == 0 {
+		return 1
+	}
+	pages := d.Total / d.PageSize
+	if d.Total%d.PageSize != 0 {
+		pages++
+	}
+	return pages
+}
+
+func (d ResourceListData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d ResourceListData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+func (d ResourceListData) canCreateResource() bool {
+	if d.AuthUser == nil {
+		return false
+	}
+	for _, r := range d.AuthUser.Roles {
+		if r == "AUTHOR" || r == "ADMIN" {
+			return true
+		}
+	}
+	return false
+}
+
+templ ResourceListPage(data ResourceListData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Resources",
+		ActiveRoute: "/resources",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		@components.PageHeader("Learning Resources", []components.Breadcrumb{
+			{Label: fmt.Sprintf("%d resources", data.Total)},
+		})
+		<!-- Actions bar -->
+		<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+			<form
+				hx-get="/resources"
+				hx-target="#resource-list-section"
+				hx-swap="outerHTML"
+				hx-push-url="true"
+				style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;"
+			>
+				<div style="flex:1;min-width:200px;">
+					<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Search</label>
+					<input class="ee-input" type="text" name="search" value={ data.Filter.Search } placeholder="Title or description…"/>
+				</div>
+				<div>
+					<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Status</label>
+					<select class="ee-input" name="status" style="min-width:140px;">
+						<option value="">All statuses</option>
+						for _, s := range []string{"DRAFT","PENDING_REVIEW","APPROVED","PUBLISHED","REJECTED","TAKEN_DOWN"} {
+							if data.Filter.Status == s {
+								<option value={ s } selected>{ s }</option>
+							} else {
+								<option value={ s }>{ s }</option>
+							}
+						}
+					</select>
+				</div>
+				<button type="submit" class="ee-btn ee-btn--secondary">Filter</button>
+			</form>
+			if data.canCreateResource() {
+				<a href="/resources/new" class="ee-btn ee-btn--primary">+ New Resource</a>
+			}
+		</div>
+		<!-- Resource list -->
+		<div id="resource-list-section">
+			if len(data.Resources) == 0 {
+				@components.EmptyState("resources", "No resources found", "Try adjusting your filters or create a new resource.", "+ New Resource", "/resources/new")
+			} else {
+				<div style="display:flex;flex-direction:column;gap:12px;">
+					for _, r := range data.Resources {
+						<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;box-shadow:var(--shadow-sm);">
+							<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
+								<div style="flex:1;">
+									<a href={ templ.SafeURL("/resources/" + r.ID.String()) } style="font-size:1rem;font-weight:600;color:var(--text-primary);text-decoration:none;">{ r.Title }</a>
+									if r.Description != "" {
+										<p style="margin:4px 0 0;font-size:0.875rem;color:var(--text-secondary);">{ r.Description }</p>
+									}
+									<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+										@components.Badge(r.Status.String(), r.Status.String())
+										if r.CategoryName != "" {
+											<span style="font-size:0.75rem;color:var(--text-tertiary);">{ r.CategoryName }</span>
+										}
+										if r.AuthorName != "" {
+											<span style="font-size:0.75rem;color:var(--text-tertiary);">by { r.AuthorName }</span>
+										}
+									</div>
+								</div>
+								<a href={ templ.SafeURL("/resources/" + r.ID.String()) } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:4px 12px;white-space:nowrap;">View</a>
+							</div>
+						</div>
+					}
+				</div>
+				<!-- Pagination -->
+				if data.totalPages() > 1 {
+					<div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
+						<span style="font-size:0.875rem;color:var(--text-tertiary);">
+							Page { strconv.Itoa(data.Page) } of { strconv.Itoa(data.totalPages()) } ({ strconv.Itoa(data.Total) } total)
+						</span>
+						<div style="display:flex;gap:8px;">
+							if data.Page > 1 {
+								<a href={ templ.SafeURL(fmt.Sprintf("/resources?page=%d&search=%s&status=%s", data.Page-1, data.Filter.Search, data.Filter.Status)) } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:6px 12px;">← Previous</a>
+							}
+							if data.Page < data.totalPages() {
+								<a href={ templ.SafeURL(fmt.Sprintf("/resources?page=%d&search=%s&status=%s", data.Page+1, data.Filter.Search, data.Filter.Status)) } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:6px 12px;">Next →</a>
+							}
+						</div>
+					</div>
+				}
+			}
+		</div>
+	}
+}

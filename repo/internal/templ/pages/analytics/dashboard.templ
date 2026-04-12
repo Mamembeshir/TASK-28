@@ -1,0 +1,149 @@
+package analyticspages
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// DashboardData holds data for the analytics dashboard page.
+type DashboardData struct {
+	Metrics    *model.DashboardMetrics
+	AuthUser   *middleware.AuthUser
+	IsAdmin    bool
+	IsReviewer bool
+}
+
+func barWidth(value, maxValue float64) string {
+	if maxValue == 0 {
+		return "0"
+	}
+	pct := int(value / maxValue * 100)
+	if pct > 100 {
+		pct = 100
+	}
+	return strconv.Itoa(pct)
+}
+
+func maxMetricValue(summaries []model.AnalyticsSummary) float64 {
+	var max float64
+	for _, s := range summaries {
+		if s.MetricValue > max {
+			max = s.MetricValue
+		}
+	}
+	return max
+}
+
+templ DashboardPage(data DashboardData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Analytics Dashboard",
+		ActiveRoute: "/analytics/dashboard",
+		Username:    dashUsername(data.AuthUser),
+		UserRole:    dashUserRole(data.AuthUser),
+	}) {
+		@components.PageHeader("Analytics Dashboard", []components.Breadcrumb{
+			{Label: fmt.Sprintf("Refreshed: %s", data.Metrics.RefreshedAt.Format("2006-01-02 15:04"))},
+		})
+		<!-- Metrics cards -->
+		<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:32px;">
+			<!-- Total Resources -->
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-left:4px solid #16a34a;border-radius:8px;padding:20px;">
+				<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Total Resources</div>
+				<div style="font-size:2rem;font-weight:700;color:#16a34a;">{ strconv.Itoa(data.Metrics.TotalResources) }</div>
+			</div>
+			<!-- Total Users -->
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-left:4px solid #2563eb;border-radius:8px;padding:20px;">
+				<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Total Users</div>
+				<div style="font-size:2rem;font-weight:700;color:#2563eb;">{ strconv.Itoa(data.Metrics.TotalUsers) }</div>
+			</div>
+			if data.IsAdmin || data.IsReviewer {
+				<!-- Approval Cycle Time -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-left:4px solid #d97706;border-radius:8px;padding:20px;">
+					<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Approval Cycle Time</div>
+					<div style="font-size:2rem;font-weight:700;color:#d97706;">{ fmt.Sprintf("%.1f", data.Metrics.ApprovalCycleTime) }</div>
+					<div style="font-size:0.75rem;color:var(--text-tertiary);">hours avg</div>
+				</div>
+				<!-- Violation Rate -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-left:4px solid #dc2626;border-radius:8px;padding:20px;">
+					<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Violation Rate</div>
+					<div style="font-size:2rem;font-weight:700;color:#dc2626;">{ fmt.Sprintf("%.1f%%", data.Metrics.ViolationRate) }</div>
+				</div>
+			}
+			if data.IsAdmin {
+				<!-- Cancellation Rate -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-left:4px solid #7c3aed;border-radius:8px;padding:20px;">
+					<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Cancellation Rate</div>
+					<div style="font-size:2rem;font-weight:700;color:#7c3aed;">{ fmt.Sprintf("%.1f%%", data.Metrics.CancellationRate) }</div>
+				</div>
+				<!-- Total Orders -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-left:4px solid #0891b2;border-radius:8px;padding:20px;">
+					<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Total Orders</div>
+					<div style="font-size:2rem;font-weight:700;color:#0891b2;">{ strconv.Itoa(data.Metrics.TotalOrders) }</div>
+				</div>
+			}
+		</div>
+		<!-- Demand Hotspots -->
+		if len(data.Metrics.DemandHotspots) > 0 {
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:8px;padding:24px;margin-bottom:24px;">
+				<h2 style="font-size:1rem;font-weight:700;color:var(--text-primary);margin:0 0 16px 0;">Demand Hotspots — Top Categories</h2>
+				<div style="display:flex;flex-direction:column;gap:10px;">
+					for _, entry := range data.Metrics.DemandHotspots {
+						<div style="display:flex;align-items:center;gap:12px;">
+							<div style="min-width:140px;font-size:0.875rem;color:var(--text-primary);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{ entry.MetricLabel }</div>
+							<div style="flex:1;display:flex;align-items:center;gap:8px;">
+								<svg viewBox={ fmt.Sprintf("0 0 200 20") } style="flex:1;height:20px;min-width:80px;">
+									<rect x="0" y="2" width={ barWidth(entry.MetricValue, maxMetricValue(data.Metrics.DemandHotspots)) } height="16" rx="3" fill="#2D5A8E"/>
+								</svg>
+								<span style="font-size:0.8rem;color:var(--text-secondary);min-width:32px;text-align:right;">{ fmt.Sprintf("%.0f", entry.MetricValue) }</span>
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+		}
+		<!-- Utilization Peaks (Admin only) -->
+		if data.IsAdmin && len(data.Metrics.UtilizationPeaks) > 0 {
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:8px;padding:24px;">
+				<h2 style="font-size:1rem;font-weight:700;color:var(--text-primary);margin:0 0 16px 0;">Utilization Peaks — Activity by Hour</h2>
+				<div style="display:flex;align-items:flex-end;gap:4px;height:120px;padding-bottom:20px;position:relative;">
+					for _, entry := range data.Metrics.UtilizationPeaks {
+						<div style="display:flex;flex-direction:column;align-items:center;flex:1;height:100%;">
+							<div style="flex:1;display:flex;align-items:flex-end;width:100%;">
+								<svg viewBox="0 0 20 100" style="width:100%;height:100%;" preserveAspectRatio="none">
+									<rect
+										x="2"
+										y={ strconv.Itoa(100 - int(entry.MetricValue/maxMetricValue(data.Metrics.UtilizationPeaks)*100)) }
+										width="16"
+										height={ barWidth(entry.MetricValue, maxMetricValue(data.Metrics.UtilizationPeaks)) }
+										fill="#2D5A8E"
+										rx="2"
+									/>
+								</svg>
+							</div>
+							<div style="font-size:0.6rem;color:var(--text-tertiary);margin-top:4px;">{ entry.MetricKey }</div>
+						</div>
+					}
+				</div>
+			</div>
+		}
+	}
+}
+
+func dashUsername(u *middleware.AuthUser) string {
+	if u == nil {
+		return ""
+	}
+	return u.Username
+}
+
+func dashUserRole(u *middleware.AuthUser) string {
+	if u == nil || len(u.Roles) == 0 {
+		return "REGULAR_USER"
+	}
+	return u.Roles[0]
+}

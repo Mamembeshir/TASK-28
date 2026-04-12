@@ -1,0 +1,28 @@
+package components
+
+templ Modal(title string) {
+	<div
+		id="modal-overlay"
+		style="position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);"
+		onclick="if(event.target===this)this.remove()"
+	>
+		<div style="background:var(--surface-elevated);border-radius:14px;box-shadow:var(--shadow-lg);max-width:540px;width:100%;margin:0 16px;" role="dialog" aria-modal="true">
+			<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border-default);">
+				<h3 style="font-size:1.125rem;font-weight:600;color:var(--text-primary);margin:0;">{ title }</h3>
+				<button
+					type="button"
+					style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:4px;"
+					onclick="this.closest('#modal-overlay').remove()"
+					aria-label="Close"
+				>
+					<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+			<div style="padding:24px;">
+				{ children... }
+			</div>
+		</div>
+	</div>
+}

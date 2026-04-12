@@ -1,0 +1,150 @@
+package supplierpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// KPIDashboardData holds data for the KPI dashboard page.
+type KPIDashboardData struct {
+	KPI      *model.SupplierKPI
+	Supplier *model.Supplier
+	AuthUser *middleware.AuthUser
+}
+
+func (d KPIDashboardData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d KPIDashboardData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+// kpiCardClass returns CSS class based on whether KPI meets target.
+func kpiCardClass(meets bool) string {
+	if meets {
+		return "kpi-card-green"
+	}
+	return "kpi-card-red"
+}
+
+func kpiStatusText(meets bool, goodLabel, badLabel string) string {
+	if meets {
+		return goodLabel
+	}
+	return badLabel
+}
+
+// KPIDashboardPage renders the KPI dashboard.
+templ KPIDashboardPage(data KPIDashboardData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "KPI Dashboard",
+		ActiveRoute: "/supplier/kpis",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<style>
+			.kpi-card-green { background: var(--success-light); border: 1px solid var(--border-default); border-radius: 10px; padding: 20px; text-align: center; }
+			.kpi-card-red { background: var(--danger-light); border: 1px solid var(--border-default); border-radius: 10px; padding: 20px; text-align: center; }
+			.kpi-value-green { font-size: 2rem; font-weight: 700; color: var(--success); }
+			.kpi-value-red { font-size: 2rem; font-weight: 700; color: var(--danger); }
+			.kpi-status-green { margin-top: 8px; font-size: 0.75rem; font-weight: 600; color: var(--success); }
+			.kpi-status-red { margin-top: 8px; font-size: 0.75rem; font-weight: 600; color: var(--danger); }
+		</style>
+		<div style="margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;">
+			<div>
+				if data.Supplier != nil {
+					<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">KPI Dashboard — { data.Supplier.Name }</h1>
+					<div style="margin-top:8px;">
+						@TierBadge(data.Supplier.Tier)
+					</div>
+				} else {
+					<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">KPI Dashboard</h1>
+				}
+			</div>
+			if data.Supplier != nil {
+				<a href={ templ.SafeURL("/suppliers/" + data.Supplier.ID.String()) } style="font-size:0.875rem;color:var(--brand-primary);">← Back to Supplier</a>
+			}
+		</div>
+		if data.KPI != nil {
+			<div style="margin-bottom:16px;font-size:0.875rem;color:var(--text-secondary);">
+				Period: { data.KPI.PeriodStart.Format("2006-01-02") } — { data.KPI.PeriodEnd.Format("2006-01-02") }
+			</div>
+			<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px;margin-bottom:24px;">
+				<!-- OTD -->
+				<div class={ kpiCardClass(data.KPI.OnTimeDeliveryPct >= 95) }>
+					<div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);margin-bottom:8px;">On-Time Delivery</div>
+					if data.KPI.OnTimeDeliveryPct >= 95 {
+						<div class="kpi-otd-value kpi-value-green">{ fmt.Sprintf("%.1f%%", data.KPI.OnTimeDeliveryPct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≥ 95%</div>
+						<div class="kpi-otd-status kpi-status-green">✓ Met</div>
+					} else {
+						<div class="kpi-otd-value kpi-value-red">{ fmt.Sprintf("%.1f%%", data.KPI.OnTimeDeliveryPct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≥ 95%</div>
+						<div class="kpi-otd-status kpi-status-red">✗ Below Target</div>
+					}
+				</div>
+				<!-- Stockout -->
+				<div class={ kpiCardClass(data.KPI.StockoutRatePct <= 2) }>
+					<div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);margin-bottom:8px;">Stockout Rate</div>
+					if data.KPI.StockoutRatePct <= 2 {
+						<div class="kpi-stockout-value kpi-value-green">{ fmt.Sprintf("%.1f%%", data.KPI.StockoutRatePct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≤ 2%</div>
+						<div class="kpi-status-green">✓ Met</div>
+					} else {
+						<div class="kpi-stockout-value kpi-value-red">{ fmt.Sprintf("%.1f%%", data.KPI.StockoutRatePct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≤ 2%</div>
+						<div class="kpi-status-red">✗ Above Target</div>
+					}
+				</div>
+				<!-- Return Rate -->
+				<div class={ kpiCardClass(data.KPI.ReturnRatePct <= 1) }>
+					<div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);margin-bottom:8px;">Return Rate</div>
+					if data.KPI.ReturnRatePct <= 1 {
+						<div class="kpi-return-value kpi-value-green">{ fmt.Sprintf("%.1f%%", data.KPI.ReturnRatePct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≤ 1%</div>
+						<div class="kpi-status-green">✓ Met</div>
+					} else {
+						<div class="kpi-return-value kpi-value-red">{ fmt.Sprintf("%.1f%%", data.KPI.ReturnRatePct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≤ 1%</div>
+						<div class="kpi-status-red">✗ Above Target</div>
+					}
+				</div>
+				<!-- Defect Rate -->
+				<div class={ kpiCardClass(data.KPI.DefectRatePct <= 0.5) }>
+					<div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);margin-bottom:8px;">Defect Rate</div>
+					if data.KPI.DefectRatePct <= 0.5 {
+						<div class="kpi-defect-value kpi-value-green">{ fmt.Sprintf("%.2f%%", data.KPI.DefectRatePct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≤ 0.5%</div>
+						<div class="kpi-status-green">✓ Met</div>
+					} else {
+						<div class="kpi-defect-value kpi-value-red">{ fmt.Sprintf("%.2f%%", data.KPI.DefectRatePct) }</div>
+						<div style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Target: ≤ 0.5%</div>
+						<div class="kpi-status-red">✗ Above Target</div>
+					}
+				</div>
+			</div>
+			if data.Supplier != nil {
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;">
+					<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:12px;">Tier Assignment</h2>
+					<div style="display:flex;align-items:center;gap:16px;">
+						@TierBadge(data.KPI.TierAssigned)
+						<span style="font-size:0.875rem;color:var(--text-secondary);">Computed: { data.KPI.ComputedAt.Format("2006-01-02 15:04 UTC") }</span>
+					</div>
+				</div>
+			}
+		} else {
+			<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:48px;text-align:center;color:var(--text-tertiary);">
+				No KPI data available yet. KPIs are calculated nightly or can be triggered manually.
+			</div>
+		}
+	}
+}

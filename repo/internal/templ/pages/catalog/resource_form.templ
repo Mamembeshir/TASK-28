@@ -1,0 +1,210 @@
+package catalogpages
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	catalogservice "github.com/eduexchange/eduexchange/internal/service/catalog"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+type ResourceFormData struct {
+	Resource   *model.Resource
+	Categories []model.Category
+	Tags       []model.Tag
+	Errors     *model.ValidationErrors
+	Input      catalogservice.ResourceInput
+	AuthUser   *middleware.AuthUser
+}
+
+func (d ResourceFormData) isEdit() bool { return d.Resource != nil }
+
+func (d ResourceFormData) title() string {
+	if d.isEdit() {
+		return "Edit Resource"
+	}
+	return "New Resource"
+}
+
+func (d ResourceFormData) method() string {
+	if d.isEdit() {
+		return "PUT"
+	}
+	return "POST"
+}
+
+func (d ResourceFormData) action() string {
+	if d.isEdit() {
+		return "/resources/" + d.Resource.ID.String()
+	}
+	return "/resources"
+}
+
+func (d ResourceFormData) version() string {
+	if d.isEdit() {
+		return fmt.Sprintf("%d", d.Resource.Version)
+	}
+	return "0"
+}
+
+func (d ResourceFormData) currentTitle() string {
+	if d.Input.Title != "" {
+		return d.Input.Title
+	}
+	if d.isEdit() {
+		return d.Resource.Title
+	}
+	return ""
+}
+
+func (d ResourceFormData) currentDescription() string {
+	if d.Input.Description != "" {
+		return d.Input.Description
+	}
+	if d.isEdit() {
+		return d.Resource.Description
+	}
+	return ""
+}
+
+func (d ResourceFormData) currentContentBody() string {
+	if d.Input.ContentBody != "" {
+		return d.Input.ContentBody
+	}
+	if d.isEdit() {
+		return d.Resource.ContentBody
+	}
+	return ""
+}
+
+func (d ResourceFormData) currentTags() string {
+	if len(d.Input.TagNames) > 0 {
+		return strings.Join(d.Input.TagNames, ", ")
+	}
+	if d.isEdit() {
+		names := make([]string, 0, len(d.Resource.Tags))
+		for _, t := range d.Resource.Tags {
+			names = append(names, t.Name)
+		}
+		return strings.Join(names, ", ")
+	}
+	return ""
+}
+
+func (d ResourceFormData) fieldError(field string) string {
+	if d.Errors == nil {
+		return ""
+	}
+	for _, e := range d.Errors.Errors {
+		if e.Field == field {
+			return e.Message
+		}
+	}
+	return ""
+}
+
+func (d ResourceFormData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d ResourceFormData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+templ ResourceFormPage(data ResourceFormData) {
+	@layouts.Base(layouts.PageData{
+		Title:       data.title(),
+		ActiveRoute: "/resources",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		@components.PageHeader(data.title(), []components.Breadcrumb{
+			{Label: "Resources", URL: "/resources"},
+			{Label: data.title()},
+		})
+		<div style="max-width:720px;">
+			<form
+				hx-method={ data.method() }
+				hx-action={ data.action() }
+				hx-push-url="true"
+				style="display:flex;flex-direction:column;gap:20px;"
+			>
+				<input type="hidden" name="version" value={ data.version() }/>
+				<!-- Title -->
+				<div>
+					<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Title *</label>
+					<input
+						class="ee-input"
+						type="text"
+						name="title"
+						value={ data.currentTitle() }
+						placeholder="Resource title…"
+						maxlength="300"
+					/>
+					if data.fieldError("title") != "" {
+						<p style="color:var(--color-error);font-size:0.8rem;margin-top:4px;">{ data.fieldError("title") }</p>
+					}
+				</div>
+				<!-- Description -->
+				<div>
+					<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Description</label>
+					<textarea class="ee-input" name="description" rows="3" placeholder="Brief description…" maxlength="5000">{ data.currentDescription() }</textarea>
+					if data.fieldError("description") != "" {
+						<p style="color:var(--color-error);font-size:0.8rem;margin-top:4px;">{ data.fieldError("description") }</p>
+					}
+				</div>
+				<!-- Content -->
+				<div>
+					<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Content</label>
+					<textarea class="ee-input" name="content_body" rows="8" placeholder="Resource content…">{ data.currentContentBody() }</textarea>
+				</div>
+				<!-- Category -->
+				<div>
+					<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Category</label>
+					<select class="ee-input" name="category_id">
+						<option value="">No category</option>
+						for _, cat := range data.Categories {
+							if data.isEdit() && data.Resource.CategoryID != nil && *data.Resource.CategoryID == cat.ID {
+								<option value={ cat.ID.String() } selected>{ cat.Name }</option>
+							} else {
+								<option value={ cat.ID.String() }>{ cat.Name }</option>
+							}
+						}
+					</select>
+				</div>
+				<!-- Tags -->
+				<div>
+					<label style="display:block;font-size:0.8rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Tags</label>
+					<input
+						class="ee-input"
+						type="text"
+						name="tags"
+						value={ data.currentTags() }
+						placeholder="Comma-separated tags (e.g. math, science)"
+					/>
+					<p style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Separate multiple tags with commas. New tags will be created automatically.</p>
+				</div>
+				<!-- Actions -->
+				<div style="display:flex;gap:12px;align-items:center;">
+					<button type="submit" class="ee-btn ee-btn--primary">
+						if data.isEdit() {
+							Save Changes
+						} else {
+							Create Draft
+						}
+					</button>
+					<a href="/resources" class="ee-btn ee-btn--secondary">Cancel</a>
+				</div>
+			</form>
+		</div>
+	}
+}

@@ -1,0 +1,64 @@
+package components
+
+import "github.com/eduexchange/eduexchange/internal/model"
+
+// ToastData holds data for an SSE-pushed notification toast.
+type ToastData struct {
+	Title     string
+	Body      string
+	EventType string
+}
+
+// toastBorderClass returns the colored left-border class based on event type.
+func toastBorderClass(eventType string) string {
+	switch model.EventType(eventType) {
+	case model.EventAnomalyAlert, model.EventBanNotice:
+		return "border-l-4 border-red-500"
+	case model.EventEntryDeadline, model.EventReviewDecision, model.EventSupplierQC:
+		return "border-l-4 border-amber-500"
+	case model.EventBadgeEarned, model.EventLevelUp, model.EventPublishComplete:
+		return "border-l-4 border-green-500"
+	default:
+		return "border-l-4 border-blue-500"
+	}
+}
+
+// NotificationToast renders a sliding toast notification for SSE-pushed events.
+templ NotificationToast(d ToastData) {
+	<div
+		class={ "notification-toast fixed top-4 right-4 z-50 flex items-start gap-3 w-80 bg-white rounded-lg shadow-lg border border-[var(--border-default)] p-4 " + toastBorderClass(d.EventType) }
+		role="alert"
+	>
+		<div class="flex-1 min-w-0">
+			<p class="text-sm font-semibold text-[var(--text-primary)]">{ d.Title }</p>
+			<p class="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-2">{ d.Body }</p>
+		</div>
+		<button
+			type="button"
+			class="flex-shrink-0 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+			aria-label="Dismiss"
+			onclick="(function(btn){var el=btn.closest('.notification-toast');if(el){el.style.opacity='0';el.style.transform='translateX(100%)';el.style.transition='all 300ms ease-in-out';setTimeout(function(){el.remove()},300)}})(this)"
+		>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+			</svg>
+		</button>
+		<script>
+			(function() {
+				var el = document.currentScript.parentElement;
+				el.style.transform = 'translateX(100%)';
+				el.style.opacity = '0';
+				el.style.transition = 'all 300ms ease-in-out';
+				requestAnimationFrame(function() {
+					el.style.transform = 'translateX(0)';
+					el.style.opacity = '1';
+				});
+				setTimeout(function() {
+					el.style.opacity = '0';
+					el.style.transform = 'translateX(100%)';
+					setTimeout(function() { el.remove(); }, 300);
+				}, 5000);
+			})();
+		</script>
+	</div>
+}

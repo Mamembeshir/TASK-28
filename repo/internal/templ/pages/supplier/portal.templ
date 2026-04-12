@@ -1,0 +1,165 @@
+package supplierpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// PortalData holds data for the supplier portal page.
+type PortalData struct {
+	Supplier *model.Supplier
+	Orders   []model.SupplierOrder
+	KPI      *model.SupplierKPI
+	AuthUser *middleware.AuthUser
+}
+
+func (d PortalData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d PortalData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+func (d PortalData) isAdmin() bool {
+	if d.AuthUser == nil {
+		return false
+	}
+	for _, r := range d.AuthUser.Roles {
+		if r == "ADMIN" {
+			return true
+		}
+	}
+	return false
+}
+
+// PortalPage renders the supplier user's own view.
+templ PortalPage(data PortalData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Supplier Portal",
+		ActiveRoute: "/supplier/portal",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<div style="margin-bottom:24px;">
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Supplier Portal</h1>
+			if data.Supplier != nil {
+				<div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+					<span style="font-size:1rem;font-weight:500;color:var(--text-secondary);">{ data.Supplier.Name }</span>
+					@TierBadge(data.Supplier.Tier)
+				</div>
+			}
+		</div>
+
+		<!-- KPI Summary -->
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;margin-bottom:24px;">
+			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+				<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0;">Performance KPIs</h2>
+				if data.Supplier != nil && data.isAdmin() {
+					<a href={ templ.SafeURL("/suppliers/" + data.Supplier.ID.String() + "/kpis") } style="font-size:0.875rem;color:var(--brand-primary);text-decoration:none;">Full dashboard →</a>
+				}
+			</div>
+			if data.KPI != nil {
+				<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+					<div style="background:var(--surface-secondary);border-radius:8px;padding:16px;text-align:center;">
+						<div style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">On-Time Delivery</div>
+						<div style="font-size:1.75rem;font-weight:700;color:var(--text-primary);">{ fmt.Sprintf("%.1f%%", data.KPI.OnTimeDeliveryPct) }</div>
+					</div>
+					<div style="background:var(--surface-secondary);border-radius:8px;padding:16px;text-align:center;">
+						<div style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Stockout Rate</div>
+						<div style="font-size:1.75rem;font-weight:700;color:var(--text-primary);">{ fmt.Sprintf("%.1f%%", data.KPI.StockoutRatePct) }</div>
+					</div>
+					<div style="background:var(--surface-secondary);border-radius:8px;padding:16px;text-align:center;">
+						<div style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Return Rate</div>
+						<div style="font-size:1.75rem;font-weight:700;color:var(--text-primary);">{ fmt.Sprintf("%.1f%%", data.KPI.ReturnRatePct) }</div>
+					</div>
+					<div style="background:var(--surface-secondary);border-radius:8px;padding:16px;text-align:center;">
+						<div style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Defect Rate</div>
+						<div style="font-size:1.75rem;font-weight:700;color:var(--text-primary);">{ fmt.Sprintf("%.2f%%", data.KPI.DefectRatePct) }</div>
+					</div>
+				</div>
+			} else {
+				<div style="display:flex;align-items:center;gap:14px;padding:20px;background:var(--surface-secondary);border-radius:8px;">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-tertiary);flex-shrink:0;">
+						<line x1="18" y1="20" x2="18" y2="10"></line>
+						<line x1="12" y1="20" x2="12" y2="4"></line>
+						<line x1="6" y1="20" x2="6" y2="14"></line>
+					</svg>
+					<div>
+						<p style="font-size:0.875rem;font-weight:500;color:var(--text-primary);margin:0 0 2px;">No KPI data yet</p>
+						<p style="font-size:0.8125rem;color:var(--text-tertiary);margin:0;">KPIs are calculated after your first orders are completed.</p>
+					</div>
+				</div>
+			}
+		</div>
+
+		<!-- Orders Table -->
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;overflow:hidden;">
+			<div style="padding:16px 20px;border-bottom:1px solid var(--border-default);display:flex;align-items:center;justify-content:space-between;">
+				<h2 style="font-size:1rem;font-weight:600;color:var(--text-primary);">Your Orders</h2>
+				if len(data.Orders) > 0 {
+					<a href="/supplier/orders" style="font-size:0.875rem;color:var(--brand-primary);text-decoration:none;">View all →</a>
+				}
+			</div>
+			if len(data.Orders) == 0 {
+				<div style="padding:56px 24px;display:flex;flex-direction:column;align-items:center;gap:16px;">
+					<div style="width:56px;height:56px;border-radius:12px;background:var(--surface-secondary);display:flex;align-items:center;justify-content:center;">
+						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-tertiary);">
+							<path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"></path>
+							<rect x="9" y="3" width="6" height="4" rx="1"></rect>
+							<line x1="9" y1="12" x2="15" y2="12"></line>
+							<line x1="9" y1="16" x2="13" y2="16"></line>
+						</svg>
+					</div>
+					<div style="text-align:center;">
+						<p style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);margin:0 0 6px;">No orders yet</p>
+						<p style="font-size:0.875rem;color:var(--text-tertiary);margin:0;max-width:320px;line-height:1.5;">
+							When your account manager creates orders for your account, they will appear here. Check back later or contact your account manager.
+						</p>
+					</div>
+				</div>
+			} else {
+				<table style="width:100%;border-collapse:collapse;">
+					<thead>
+						<tr style="background:var(--surface-secondary);">
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);letter-spacing:0.04em;">Order #</th>
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);letter-spacing:0.04em;">Status</th>
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);letter-spacing:0.04em;">Created</th>
+							<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;color:var(--text-secondary);letter-spacing:0.04em;">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, o := range data.Orders {
+							<tr style="border-bottom:1px solid var(--border-default);">
+								<td style="padding:12px 14px;font-size:0.875rem;font-family:monospace;">{ o.OrderNumber }</td>
+								<td style="padding:12px 14px;">
+									@OrderStatusBadge(o.Status)
+								</td>
+								<td style="padding:12px 14px;font-size:0.875rem;color:var(--text-secondary);">{ o.CreatedAt.Format("2006-01-02") }</td>
+								<td style="padding:12px 14px;display:flex;gap:8px;">
+									<a href={ templ.SafeURL("/supplier/orders/" + o.ID.String()) } style="font-size:0.875rem;color:var(--brand-primary);font-weight:500;">View</a>
+									if o.Status == model.OrderStatusCreated {
+										<span style="color:var(--border-default);">|</span>
+										<a href={ templ.SafeURL("/supplier/orders/" + o.ID.String()) } style="font-size:0.875rem;color:var(--brand-accent);font-weight:500;">Confirm Date</a>
+									}
+									if o.Status == model.OrderStatusConfirmed {
+										<span style="color:var(--border-default);">|</span>
+										<a href={ templ.SafeURL("/supplier/orders/" + o.ID.String()) } style="font-size:0.875rem;color:var(--brand-accent);font-weight:500;">Submit ASN</a>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</div>
+	}
+}

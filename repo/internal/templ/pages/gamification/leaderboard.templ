@@ -1,0 +1,97 @@
+package gamificationpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// LeaderboardData holds data for the leaderboard page.
+type LeaderboardData struct {
+	Entries  []model.LeaderboardEntry
+	AuthUser *middleware.AuthUser
+}
+
+func (d LeaderboardData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d LeaderboardData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return string(d.AuthUser.Roles[0])
+	}
+	return ""
+}
+
+// LeaderboardPage renders the full leaderboard page.
+templ LeaderboardPage(d LeaderboardData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Leaderboard",
+		ActiveRoute: "/leaderboard",
+		Username:    d.username(),
+		UserRole:    d.userRole(),
+	}) {
+		<h1 style="font-size:1.5rem;font-weight:600;color:var(--text-primary);margin-bottom:24px;">&#127942; Leaderboard</h1>
+		@LeaderboardTable(d.Entries)
+	}
+}
+
+// LeaderboardTable renders just the leaderboard table (for HTMX fragment reuse).
+templ LeaderboardTable(entries []model.LeaderboardEntry) {
+	<div class="bg-white rounded-xl border border-border-default shadow-sm overflow-hidden">
+		if len(entries) == 0 {
+			<div class="p-8 text-center text-gray-400">No entries yet.</div>
+		} else {
+			<table class="w-full text-sm">
+				<thead class="bg-gray-50 border-b border-gray-200">
+					<tr>
+						<th class="text-left px-5 py-3 text-gray-500 font-medium w-12">Rank</th>
+						<th class="text-left px-5 py-3 text-gray-500 font-medium">User</th>
+						<th class="text-right px-5 py-3 text-gray-500 font-medium">Points</th>
+						<th class="text-right px-5 py-3 text-gray-500 font-medium">Level</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-100">
+					for _, e := range entries {
+						<tr class={ rowClass(e.Rank) }>
+							<td class="px-5 py-3 font-semibold text-gray-600">{ rankBadge(e.Rank) }</td>
+							<td class="px-5 py-3 text-text-primary">{ e.Username }</td>
+							<td class="px-5 py-3 text-right font-semibold text-blue-600">{ fmt.Sprintf("%d", e.TotalPoints) }</td>
+							<td class="px-5 py-3 text-right text-purple-600">{ fmt.Sprintf("%d", e.Level) }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}
+
+func rowClass(rank int) string {
+	if rank == 1 {
+		return "bg-yellow-50"
+	}
+	if rank == 2 {
+		return "bg-gray-50"
+	}
+	if rank == 3 {
+		return "bg-orange-50"
+	}
+	return ""
+}
+
+func rankBadge(rank int) string {
+	switch rank {
+	case 1:
+		return "🥇"
+	case 2:
+		return "🥈"
+	case 3:
+		return "🥉"
+	default:
+		return fmt.Sprintf("#%d", rank)
+	}
+}

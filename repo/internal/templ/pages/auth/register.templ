@@ -1,0 +1,96 @@
+package authpages
+
+import "github.com/eduexchange/eduexchange/internal/templ/layouts"
+
+type RegisterData struct {
+	Error       string
+	Username    string
+	Email       string
+	FieldErrors map[string]string
+}
+
+func (d RegisterData) fieldError(field string) string {
+	if d.FieldErrors == nil {
+		return ""
+	}
+	return d.FieldErrors[field]
+}
+
+templ RegisterPage(data RegisterData) {
+	@layouts.Auth("Create Account") {
+		<h1 style="font-size:1.25rem;font-weight:700;color:var(--text-primary);margin:0 0 24px;">Create your account</h1>
+		if data.Error != "" {
+			<div style="background:var(--danger-light);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:0.875rem;">
+				{ data.Error }
+			</div>
+		}
+		<form method="POST" action="/register">
+			<!-- Username -->
+			<div style="margin-bottom:16px;">
+				<label style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" for="username">Username</label>
+				<input
+					class={ inputClass(data.fieldError("username") != "") }
+					type="text"
+					id="username"
+					name="username"
+					value={ data.Username }
+					placeholder="3–100 chars, letters/numbers/._-"
+					autocomplete="username"
+					required
+				/>
+				if data.fieldError("username") != "" {
+					<p style="font-size:0.75rem;color:var(--danger);margin-top:4px;">{ data.fieldError("username") }</p>
+				}
+			</div>
+			<!-- Email -->
+			<div style="margin-bottom:16px;">
+				<label style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" for="email">Email address</label>
+				<input
+					class={ inputClass(data.fieldError("email") != "") }
+					type="email"
+					id="email"
+					name="email"
+					value={ data.Email }
+					placeholder="you@example.com"
+					autocomplete="email"
+					required
+				/>
+				if data.fieldError("email") != "" {
+					<p style="font-size:0.75rem;color:var(--danger);margin-top:4px;">{ data.fieldError("email") }</p>
+				}
+			</div>
+			<!-- Password -->
+			<div style="margin-bottom:24px;">
+				<label style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" for="password">Password</label>
+				<input
+					class={ inputClass(data.fieldError("password") != "") }
+					type="password"
+					id="password"
+					name="password"
+					placeholder="Min 12 chars, upper/lower/digit/special"
+					autocomplete="new-password"
+					required
+				/>
+				if data.fieldError("password") != "" {
+					<p style="font-size:0.75rem;color:var(--danger);margin-top:4px;">{ data.fieldError("password") }</p>
+				} else {
+					<p style="font-size:0.75rem;color:var(--text-tertiary);margin-top:4px;">Minimum 12 characters with upper, lower, digit and special character.</p>
+				}
+			</div>
+			<button type="submit" class="ee-btn ee-btn--primary" style="width:100%;justify-content:center;">
+				Create Account
+			</button>
+		</form>
+		<p style="text-align:center;margin-top:20px;font-size:0.875rem;color:var(--text-tertiary);">
+			Already have an account?
+			<a href="/login" style="color:var(--brand-primary);font-weight:500;">Sign in</a>
+		</p>
+	}
+}
+
+func inputClass(hasError bool) string {
+	if hasError {
+		return "ee-input ee-input--error"
+	}
+	return "ee-input"
+}

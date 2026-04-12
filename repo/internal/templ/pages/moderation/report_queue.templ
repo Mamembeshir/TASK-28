@@ -1,0 +1,130 @@
+package moderationpages
+
+import (
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// ReportQueueData holds data for the report queue page.
+type ReportQueueData struct {
+	Reports      []model.Report
+	StatusFilter string
+	AuthUser     *middleware.AuthUser
+}
+
+func (d ReportQueueData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d ReportQueueData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+// ReportQueuePage renders the moderation report queue.
+templ ReportQueuePage(data ReportQueueData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Moderation Queue",
+		ActiveRoute: "/moderation/reports",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<div style="margin-bottom:24px;">
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Report Queue</h1>
+		</div>
+		<!-- Filter tabs -->
+		<div style="display:flex;gap:8px;margin-bottom:20px;">
+			<a href="/moderation/reports" style="padding:6px 16px;border-radius:6px;font-size:0.875rem;font-weight:500;text-decoration:none;background:var(--surface-elevated);color:var(--text-secondary);">All</a>
+			<a href="/moderation/reports?status=OPEN" style="padding:6px 16px;border-radius:6px;font-size:0.875rem;font-weight:500;text-decoration:none;background:var(--surface-elevated);color:var(--text-secondary);">Open</a>
+			<a href="/moderation/reports?status=UNDER_REVIEW" style="padding:6px 16px;border-radius:6px;font-size:0.875rem;font-weight:500;text-decoration:none;background:var(--surface-elevated);color:var(--text-secondary);">Under Review</a>
+			<a href="/moderation/reports?status=RESOLVED" style="padding:6px 16px;border-radius:6px;font-size:0.875rem;font-weight:500;text-decoration:none;background:var(--surface-elevated);color:var(--text-secondary);">Resolved</a>
+			<a href="/moderation/reports?status=DISMISSED" style="padding:6px 16px;border-radius:6px;font-size:0.875rem;font-weight:500;text-decoration:none;background:var(--surface-elevated);color:var(--text-secondary);">Dismissed</a>
+		</div>
+		<!-- Reports table -->
+		<div style="background:var(--surface-elevated);border-radius:8px;overflow:hidden;border:1px solid var(--border-default);">
+			<table style="width:100%;border-collapse:collapse;">
+				<thead>
+					<tr style="background:var(--surface-primary);border-bottom:1px solid var(--border-default);">
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Resource</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Reporter</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Reason</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Status</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					if len(data.Reports) == 0 {
+						<tr>
+							<td colspan="5" style="padding:32px;text-align:center;color:var(--text-tertiary);">No reports found.</td>
+						</tr>
+					} else {
+						for _, r := range data.Reports {
+							@ReportRow(r)
+						}
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+// ReportRow renders a single report table row.
+templ ReportRow(r model.Report) {
+	<tr style="border-bottom:1px solid var(--border-default);">
+		<td style="padding:12px 16px;font-size:0.875rem;color:var(--text-primary);">{ r.ResourceTitle }</td>
+		<td style="padding:12px 16px;font-size:0.875rem;color:var(--text-secondary);">{ r.ReporterName }</td>
+		<td style="padding:12px 16px;font-size:0.875rem;color:var(--text-secondary);">{ r.ReasonType }</td>
+		<td style="padding:12px 16px;">
+			@reportStatusBadge(r.Status)
+		</td>
+		<td style="padding:12px 16px;display:flex;gap:8px;">
+			<a href={ templ.SafeURL("/moderation/reports/" + r.ID.String()) }
+				style="font-size:0.75rem;color:var(--accent-primary);text-decoration:none;">View</a>
+			if r.Status == "OPEN" {
+				<button
+					hx-post={ "/moderation/reports/" + r.ID.String() + "/assign" }
+					hx-target="closest tr"
+					hx-swap="outerHTML"
+					style="font-size:0.75rem;color:var(--accent-primary);background:none;border:none;cursor:pointer;padding:0;">
+					Assign to me
+				</button>
+			}
+		</td>
+	</tr>
+}
+
+templ reportStatusBadge(status string) {
+	switch status {
+		case "OPEN":
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#FEF3C7;color:#92400E;">{ status }</span>
+		case "UNDER_REVIEW":
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#DBEAFE;color:#1E40AF;">{ status }</span>
+		case "RESOLVED":
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#D1FAE5;color:#065F46;">{ status }</span>
+		case "DISMISSED":
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#F3F4F6;color:#6B7280;">{ status }</span>
+		default:
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#F3F4F6;color:#6B7280;">{ status }</span>
+	}
+}
+
+func statusBadgeStyle(status string) string {
+	switch status {
+	case "OPEN":
+		return "background:#FEF3C7;color:#92400E;"
+	case "UNDER_REVIEW":
+		return "background:#DBEAFE;color:#1E40AF;"
+	case "RESOLVED":
+		return "background:#D1FAE5;color:#065F46;"
+	case "DISMISSED":
+		return "background:#F3F4F6;color:#6B7280;"
+	default:
+		return "background:#F3F4F6;color:#6B7280;"
+	}
+}

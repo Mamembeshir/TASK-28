@@ -1,0 +1,67 @@
+package components
+
+type ButtonVariant string
+
+const (
+	ButtonPrimary   ButtonVariant = "primary"
+	ButtonSecondary ButtonVariant = "secondary"
+	ButtonDanger    ButtonVariant = "danger"
+	ButtonDisabled  ButtonVariant = "disabled"
+)
+
+type ButtonAttrs struct {
+	Type     string
+	HxPost   string
+	HxGet    string
+	HxTarget string
+	HxSwap   string
+	ID       string
+}
+
+templ Button(variant ButtonVariant, text string, attrs ButtonAttrs) {
+	<button
+		type={ buttonType(attrs.Type) }
+		class={ buttonClass(variant) }
+		if variant == ButtonDisabled {
+			disabled
+		}
+		if attrs.HxPost != "" {
+			hx-post={ attrs.HxPost }
+		}
+		if attrs.HxGet != "" {
+			hx-get={ attrs.HxGet }
+		}
+		if attrs.HxTarget != "" {
+			hx-target={ attrs.HxTarget }
+		}
+		if attrs.HxSwap != "" {
+			hx-swap={ attrs.HxSwap }
+		}
+		if attrs.ID != "" {
+			id={ attrs.ID }
+		}
+	>
+		<span class="htmx-indicator" style="display:none;width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;margin-right:6px;vertical-align:middle;"></span>
+		{ text }
+	</button>
+}
+
+func buttonType(t string) string {
+	if t != "" {
+		return t
+	}
+	return "button"
+}
+
+func buttonClass(variant ButtonVariant) string {
+	switch variant {
+	case ButtonSecondary:
+		return "ee-btn ee-btn--secondary"
+	case ButtonDanger:
+		return "ee-btn ee-btn--danger"
+	case ButtonDisabled:
+		return "ee-btn ee-btn--disabled"
+	default:
+		return "ee-btn ee-btn--primary"
+	}
+}

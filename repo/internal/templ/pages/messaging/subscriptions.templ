@@ -1,0 +1,114 @@
+package messagingpages
+
+import (
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// SubscriptionsData holds data for the subscription management page.
+type SubscriptionsData struct {
+	Subscriptions []model.NotificationSubscription
+	AuthUser      *middleware.AuthUser
+}
+
+// eventTypeDescription returns a human-readable description for each event type.
+func eventTypeDescription(et model.EventType) string {
+	switch et {
+	case model.EventEntryDeadline:
+		return "Get notified when an entry deadline is approaching"
+	case model.EventReviewDecision:
+		return "Receive notifications about review decisions on your content"
+	case model.EventPublishComplete:
+		return "Know when your content is successfully published"
+	case model.EventSupplierShipment:
+		return "Track supplier shipment updates"
+	case model.EventSupplierQC:
+		return "Receive quality control inspection results"
+	case model.EventAnomalyAlert:
+		return "Be alerted about anomalies detected in the system"
+	case model.EventBanNotice:
+		return "Receive notices about account restrictions"
+	case model.EventReportUpdate:
+		return "Get updates on your moderation reports"
+	case model.EventBadgeEarned:
+		return "Celebrate when you earn a new badge"
+	case model.EventLevelUp:
+		return "Know when you reach a new level"
+	case model.EventFollowNewContent:
+		return "Be notified when authors or topics you follow publish new content"
+	default:
+		return ""
+	}
+}
+
+// toggleCheckedAttr returns "checked" attribute value based on enabled state.
+func toggleEnabledVal(enabled bool) string {
+	if enabled {
+		return "true"
+	}
+	return "false"
+}
+
+func (d SubscriptionsData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d SubscriptionsData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return string(d.AuthUser.Roles[0])
+	}
+	return ""
+}
+
+// SubscriptionsPage renders the full notification preferences page.
+templ SubscriptionsPage(d SubscriptionsData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Notification Preferences",
+		ActiveRoute: "/messaging",
+		Username:    d.username(),
+		UserRole:    d.userRole(),
+	}) {
+		@SubscriptionsContent(d)
+	}
+}
+
+// SubscriptionsContent renders the subscriptions content (usable as HTMX partial).
+templ SubscriptionsContent(d SubscriptionsData) {
+	<div class="mb-6">
+		<h1 class="text-2xl font-semibold text-[var(--text-primary)]">Notification Preferences</h1>
+		<p class="text-sm text-[var(--text-secondary)] mt-1">Choose which notifications you want to receive</p>
+	</div>
+	<div class="space-y-3">
+		for _, sub := range d.Subscriptions {
+			@SubscriptionCard(sub)
+		}
+	</div>
+}
+
+// SubscriptionCard renders a single subscription toggle card.
+templ SubscriptionCard(sub model.NotificationSubscription) {
+	<div class="bg-white border border-[var(--border-default)] rounded-xl p-4 flex items-center justify-between gap-4">
+		<div class="flex-1">
+			<p class="text-sm font-medium text-[var(--text-primary)]">{ eventTypeLabel(sub.EventType) }</p>
+			<p class="text-xs text-[var(--text-secondary)] mt-0.5">{ eventTypeDescription(sub.EventType) }</p>
+		</div>
+		<!-- Toggle switch -->
+		<label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+			<input
+				type="checkbox"
+				class="sr-only peer"
+				if sub.Enabled {
+					checked
+				}
+				hx-put="/messaging/subscriptions"
+				hx-vals={ `{"event_type": "` + string(sub.EventType) + `", "enabled": "` + toggleEnabledVal(!sub.Enabled) + `"}` }
+				hx-trigger="change"
+			/>
+			<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[var(--brand-primary)] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--brand-primary)]"></div>
+		</label>
+	</div>
+}

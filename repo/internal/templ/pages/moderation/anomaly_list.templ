@@ -1,0 +1,128 @@
+package moderationpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// AnomalyListData holds data for the anomaly list page.
+type AnomalyListData struct {
+	Flags    []model.AnomalyFlag
+	AuthUser *middleware.AuthUser
+}
+
+func (d AnomalyListData) anomalyUsername() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d AnomalyListData) anomalyUserRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+// AnomalyListPage renders the list of anomaly flags.
+templ AnomalyListPage(data AnomalyListData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Anomaly Detection",
+		ActiveRoute: "/moderation/anomalies",
+		Username:    data.anomalyUsername(),
+		UserRole:    data.anomalyUserRole(),
+	}) {
+		<div style="margin-bottom:24px;">
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Anomaly Flags</h1>
+			<p style="font-size:0.875rem;color:var(--text-secondary);margin-top:4px;">Detected suspicious patterns requiring review.</p>
+		</div>
+		<div style="background:var(--surface-elevated);border-radius:8px;overflow:hidden;border:1px solid var(--border-default);">
+			<table style="width:100%;border-collapse:collapse;">
+				<thead>
+					<tr style="background:var(--surface-primary);border-bottom:1px solid var(--border-default);">
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Type</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Users</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Evidence</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Status</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Detected</th>
+						<th style="padding:12px 16px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					if len(data.Flags) == 0 {
+						<tr>
+							<td colspan="6" style="padding:32px;text-align:center;color:var(--text-tertiary);">No anomaly flags found.</td>
+						</tr>
+					} else {
+						for _, flag := range data.Flags {
+							<tr style="border-bottom:1px solid var(--border-default);">
+								<td style="padding:12px 16px;font-size:0.875rem;color:var(--text-primary);">{ flag.FlagType }</td>
+								<td style="padding:12px 16px;font-size:0.75rem;color:var(--text-secondary);">
+									{ fmt.Sprintf("%d users", len(flag.UserIDs)) }
+								</td>
+								<td style="padding:12px 16px;font-size:0.75rem;color:var(--text-tertiary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+									{ fmt.Sprintf("%v", flag.EvidenceJSON) }
+								</td>
+								<td style="padding:12px 16px;">
+									@anomalyStatusBadge(flag.Status)
+								</td>
+								<td style="padding:12px 16px;font-size:0.75rem;color:var(--text-tertiary);">{ flag.CreatedAt.Format("2006-01-02") }</td>
+								<td style="padding:12px 16px;">
+									if flag.Status == "OPEN" {
+										<div style="display:flex;gap:8px;">
+											<button
+												hx-post={ "/moderation/anomalies/" + flag.ID.String() + "/review" }
+												hx-vals={ `{"decision":"REVIEWED"}` }
+												hx-target="closest tr"
+												hx-swap="outerHTML"
+												style="font-size:0.75rem;color:var(--accent-primary);background:none;border:none;cursor:pointer;padding:0;">
+												Mark Reviewed
+											</button>
+											<button
+												hx-post={ "/moderation/anomalies/" + flag.ID.String() + "/review" }
+												hx-vals={ `{"decision":"DISMISSED"}` }
+												hx-target="closest tr"
+												hx-swap="outerHTML"
+												style="font-size:0.75rem;color:var(--text-tertiary);background:none;border:none;cursor:pointer;padding:0;">
+												Dismiss
+											</button>
+										</div>
+									}
+								</td>
+							</tr>
+						}
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ anomalyStatusBadge(status string) {
+	switch status {
+		case "OPEN":
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#FEE2E2;color:#991B1B;">{ status }</span>
+		case "REVIEWED":
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#D1FAE5;color:#065F46;">{ status }</span>
+		case "DISMISSED":
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#F3F4F6;color:#6B7280;">{ status }</span>
+		default:
+			<span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:4px;background:#F3F4F6;color:#6B7280;">{ status }</span>
+	}
+}
+
+func anomalyStatusStyle(status string) string {
+	switch status {
+	case "OPEN":
+		return "background:#FEE2E2;color:#991B1B;"
+	case "REVIEWED":
+		return "background:#D1FAE5;color:#065F46;"
+	case "DISMISSED":
+		return "background:#F3F4F6;color:#6B7280;"
+	default:
+		return "background:#F3F4F6;color:#6B7280;"
+	}
+}

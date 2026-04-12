@@ -1,0 +1,301 @@
+package messagingpages
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// NotificationFilterParams holds the current filter state.
+type NotificationFilterParams struct {
+	EventType string
+	IsRead    string // "all", "read", "unread"
+	Page      int
+	PageSize  int
+}
+
+// CenterData holds data for the messaging center page.
+type CenterData struct {
+	Notifications []model.Notification
+	UnreadCount   int
+	AuthUser      *middleware.AuthUser
+	CurrentFilter NotificationFilterParams
+}
+
+// relativeTime formats a time.Time as a relative string.
+func relativeTime(t time.Time) string {
+	diff := time.Since(t)
+	switch {
+	case diff < time.Minute:
+		return "just now"
+	case diff < time.Hour:
+		mins := int(diff.Minutes())
+		if mins == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d mins ago", mins)
+	case diff < 24*time.Hour:
+		hours := int(diff.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	case diff < 7*24*time.Hour:
+		days := int(diff.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	default:
+		return t.Format("Jan 2, 2006")
+	}
+}
+
+// truncate truncates a string to n chars and appends "…" if needed.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+// unreadDotClass returns the class for the read/unread dot indicator.
+func unreadDotClass(isRead bool) string {
+	if isRead {
+		return "w-2 h-2 rounded-full bg-gray-300 flex-shrink-0 mt-2"
+	}
+	return "w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-2"
+}
+
+// notifCardClass returns card class based on read state.
+func notifCardClass(isRead bool) string {
+	if isRead {
+		return "notification-card flex gap-3 p-4 rounded-lg border border-[var(--border-default)] bg-white hover:bg-gray-50 cursor-pointer transition-colors"
+	}
+	return "notification-card flex gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 cursor-pointer transition-colors"
+}
+
+// eventTypeLabel returns a human-readable label for an event type.
+func eventTypeLabel(et model.EventType) string {
+	switch et {
+	case model.EventEntryDeadline:
+		return "Entry Deadline"
+	case model.EventReviewDecision:
+		return "Review Decision"
+	case model.EventPublishComplete:
+		return "Publish Complete"
+	case model.EventSupplierShipment:
+		return "Supplier Shipment"
+	case model.EventSupplierQC:
+		return "Supplier QC"
+	case model.EventAnomalyAlert:
+		return "Anomaly Alert"
+	case model.EventBanNotice:
+		return "Ban Notice"
+	case model.EventReportUpdate:
+		return "Report Update"
+	case model.EventBadgeEarned:
+		return "Badge Earned"
+	case model.EventLevelUp:
+		return "Level Up"
+	case model.EventFollowNewContent:
+		return "New Content from Following"
+	default:
+		return string(et)
+	}
+}
+
+func (d CenterData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d CenterData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return string(d.AuthUser.Roles[0])
+	}
+	return ""
+}
+
+// CenterPage renders the full messaging center page.
+templ CenterPage(d CenterData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Messaging Center",
+		ActiveRoute: "/messaging",
+		Username:    d.username(),
+		UserRole:    d.userRole(),
+	}) {
+		@CenterContent(d)
+	}
+}
+
+// CenterContent renders the messaging center content (usable as HTMX partial).
+templ CenterContent(d CenterData) {
+	<!-- Page Header -->
+	<div class="flex items-center justify-between mb-6">
+		<div class="flex items-center gap-3">
+			<h1 class="text-2xl font-semibold text-[var(--text-primary)]">Messaging Center</h1>
+			if d.UnreadCount > 0 {
+				<span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-500 text-white">
+					{ fmt.Sprintf("%d", d.UnreadCount) }
+				</span>
+			}
+		</div>
+		<button
+			class="px-4 py-2 text-sm font-medium text-white bg-[var(--brand-primary)] rounded-lg hover:opacity-90 transition-opacity"
+			hx-post="/messaging/notifications/read-all"
+			hx-target="#notification-list"
+			hx-swap="innerHTML"
+		>
+			Mark All Read
+		</button>
+	</div>
+	<div class="flex gap-6">
+		<!-- Sidebar filters (hidden on mobile) -->
+		<aside class="hidden md:block w-56 flex-shrink-0">
+			<div class="bg-white border border-[var(--border-default)] rounded-xl p-4">
+				<h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-3">Filter by Type</h2>
+				<form
+					hx-get="/messaging/notifications"
+					hx-target="#notification-list"
+					hx-swap="innerHTML"
+					hx-trigger="change"
+				>
+					<div class="space-y-2 mb-4">
+						for _, et := range allEventTypes() {
+							<label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+								<input
+									type="radio"
+									name="event_type"
+									value={ string(et) }
+									class="text-[var(--brand-primary)]"
+									if d.CurrentFilter.EventType == string(et) {
+										checked
+									}
+								/>
+								{ eventTypeLabel(et) }
+							</label>
+						}
+						<label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+							<input
+								type="radio"
+								name="event_type"
+								value=""
+								class="text-[var(--brand-primary)]"
+								if d.CurrentFilter.EventType == "" {
+									checked
+								}
+							/>
+							All Types
+						</label>
+					</div>
+					<h2 class="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-3">Read Status</h2>
+					<div class="space-y-2">
+						<label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+							<input
+								type="radio"
+								name="is_read"
+								value="all"
+								class="text-[var(--brand-primary)]"
+								if d.CurrentFilter.IsRead == "all" || d.CurrentFilter.IsRead == "" {
+									checked
+								}
+							/>
+							All
+						</label>
+						<label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+							<input
+								type="radio"
+								name="is_read"
+								value="unread"
+								class="text-[var(--brand-primary)]"
+								if d.CurrentFilter.IsRead == "unread" {
+									checked
+								}
+							/>
+							Unread
+						</label>
+						<label class="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+							<input
+								type="radio"
+								name="is_read"
+								value="read"
+								class="text-[var(--brand-primary)]"
+								if d.CurrentFilter.IsRead == "read" {
+									checked
+								}
+							/>
+							Read
+						</label>
+					</div>
+				</form>
+			</div>
+		</aside>
+		<!-- Main notification list -->
+		<div class="flex-1">
+			<div id="notification-list">
+				@NotificationList(d.Notifications)
+			</div>
+		</div>
+	</div>
+}
+
+// NotificationList renders the list of notifications (HTMX-swappable).
+templ NotificationList(notifications []model.Notification) {
+	if len(notifications) == 0 {
+		<div class="flex flex-col items-center justify-center py-16 text-[var(--text-tertiary)]">
+			<svg class="w-12 h-12 mb-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+			</svg>
+			<p class="text-sm">No notifications yet</p>
+		</div>
+	} else {
+		<div class="space-y-2">
+			for _, n := range notifications {
+				@NotificationCard(n)
+			}
+		</div>
+	}
+}
+
+// NotificationCard renders a single notification card (HTMX-swappable).
+templ NotificationCard(n model.Notification) {
+	<div
+		class={ notifCardClass(n.IsRead) }
+		hx-post={ fmt.Sprintf("/messaging/notifications/%s/read", n.ID.String()) }
+		hx-target="closest .notification-card"
+		hx-swap="outerHTML"
+	>
+		<div class={ unreadDotClass(n.IsRead) }></div>
+		<div class="flex-1 min-w-0">
+			<div class="flex items-start justify-between gap-2">
+				<p class="text-sm font-semibold text-[var(--text-primary)] truncate">{ n.Title }</p>
+				<span class="text-xs text-[var(--text-tertiary)] flex-shrink-0">{ relativeTime(n.CreatedAt) }</span>
+			</div>
+			<p class="text-sm text-[var(--text-secondary)] mt-0.5">{ truncate(n.Body, 100) }</p>
+			<span class="inline-block mt-1 text-xs text-[var(--text-tertiary)] bg-gray-100 rounded px-1.5 py-0.5">{ eventTypeLabel(n.EventType) }</span>
+		</div>
+	</div>
+}
+
+// allEventTypes returns all known event types for filter display.
+func allEventTypes() []model.EventType {
+	return []model.EventType{
+		model.EventEntryDeadline,
+		model.EventReviewDecision,
+		model.EventPublishComplete,
+		model.EventSupplierShipment,
+		model.EventSupplierQC,
+		model.EventAnomalyAlert,
+		model.EventBanNotice,
+		model.EventReportUpdate,
+		model.EventBadgeEarned,
+		model.EventLevelUp,
+		model.EventFollowNewContent,
+	}
+}

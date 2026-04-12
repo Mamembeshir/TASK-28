@@ -1,0 +1,112 @@
+package supplierpages
+
+import (
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// SupplierListData holds data for the supplier list page.
+type SupplierListData struct {
+	Suppliers []model.Supplier
+	AuthUser  *middleware.AuthUser
+}
+
+func (d SupplierListData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d SupplierListData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+func tierBadgeClass(tier model.SupplierTier) string {
+	switch tier {
+	case model.SupplierTierGold:
+		return "badge-gold"
+	case model.SupplierTierSilver:
+		return "badge-silver"
+	default:
+		return "badge-bronze"
+	}
+}
+
+// SupplierListPage renders the supplier list page.
+templ SupplierListPage(data SupplierListData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Suppliers",
+		ActiveRoute: "/suppliers",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		<div style="margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;">
+			<h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">Suppliers</h1>
+			<a href="/suppliers/new" style="display:inline-flex;align-items:center;padding:8px 18px;background:var(--brand-primary);color:white;border-radius:6px;font-weight:600;font-size:0.875rem;text-decoration:none;">
+				+ New Supplier
+			</a>
+		</div>
+		<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;box-shadow:var(--shadow-sm);overflow:hidden;">
+			<table style="width:100%;border-collapse:collapse;">
+				<thead>
+					<tr style="background:var(--surface-secondary);">
+						<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);">Name</th>
+						<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);">Tier</th>
+						<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);">Status</th>
+						<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);">Contact</th>
+						<th style="padding:10px 14px;text-align:left;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);">Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range data.Suppliers {
+						<tr style="border-bottom:1px solid var(--border-default);">
+							<td style="padding:12px 14px;font-size:0.875rem;font-weight:500;">{ s.Name }</td>
+							<td style="padding:12px 14px;">
+								@TierBadge(s.Tier)
+							</td>
+							<td style="padding:12px 14px;">
+								@StatusBadge(s.Status)
+							</td>
+							<td style="padding:12px 14px;font-size:0.875rem;color:var(--text-secondary);">{ s.ContactMask }</td>
+							<td style="padding:12px 14px;">
+								<a href={ templ.SafeURL("/suppliers/" + s.ID.String()) } style="font-size:0.875rem;color:var(--brand-primary);font-weight:500;">View</a>
+							</td>
+						</tr>
+					}
+					if len(data.Suppliers) == 0 {
+						<tr>
+							<td colspan="5" style="padding:32px;text-align:center;color:var(--text-tertiary);font-size:0.875rem;">No suppliers found.</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+// TierBadge renders a tier badge.
+templ TierBadge(tier model.SupplierTier) {
+	switch tier {
+	case model.SupplierTierGold:
+		<span class="tier-badge-gold" style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:0.75rem;font-weight:600;background:#fef9c3;color:#854d0e;">GOLD</span>
+	case model.SupplierTierSilver:
+		<span class="tier-badge-silver" style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:0.75rem;font-weight:600;background:#f3f4f6;color:#374151;">SILVER</span>
+	default:
+		<span class="tier-badge-bronze" style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:0.75rem;font-weight:600;background:#fef3c7;color:#92400e;">BRONZE</span>
+	}
+}
+
+// StatusBadge renders a supplier status badge.
+templ StatusBadge(status model.SupplierStatus) {
+	switch status {
+	case model.SupplierStatusActive:
+		<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:0.75rem;font-weight:600;background:var(--success-light);color:var(--success);">ACTIVE</span>
+	default:
+		<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:0.75rem;font-weight:600;background:var(--warning-light);color:var(--warning);">SUSPENDED</span>
+	}
+}

@@ -1,0 +1,44 @@
+package components
+
+templ Input(label string, name string, value string, errMsg string) {
+	<div class="mb-4">
+		<label for={ name } style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;">
+			{ label }
+		</label>
+		<input
+			type="text"
+			id={ name }
+			name={ name }
+			value={ value }
+			class={ inputClass(errMsg != "") }
+			hx-trigger="change"
+		/>
+		if errMsg != "" {
+			<p style="margin-top:4px;font-size:0.8rem;color:var(--danger);">{ errMsg }</p>
+		}
+	</div>
+}
+
+templ PasswordInput(label string, name string, errMsg string) {
+	<div class="mb-4">
+		<label for={ name } style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;">
+			{ label }
+		</label>
+		<input
+			type="password"
+			id={ name }
+			name={ name }
+			class={ inputClass(errMsg != "") }
+		/>
+		if errMsg != "" {
+			<p style="margin-top:4px;font-size:0.8rem;color:var(--danger);">{ errMsg }</p>
+		}
+	</div>
+}
+
+func inputClass(hasError bool) string {
+	if hasError {
+		return "ee-input ee-input--error"
+	}
+	return "ee-input"
+}

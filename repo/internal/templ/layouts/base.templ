@@ -1,0 +1,133 @@
+package layouts
+
+import "github.com/eduexchange/eduexchange/internal/templ/components"
+
+type PageData struct {
+	Title       string
+	ActiveRoute string
+	UserRole    string
+	Username    string
+}
+
+templ Base(data PageData) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ data.Title } — EduExchange</title>
+			<link rel="stylesheet" href="/static/css/app.css"/>
+			<script src="/static/js/htmx.min.js"></script>
+		</head>
+		<body style="background-color:var(--surface-primary);min-height:100vh;font-family:'Source Sans 3',sans-serif;">
+			<div style="display:flex;height:100vh;overflow:hidden;">
+				@components.Sidebar(defaultNavSections(), data.ActiveRoute, data.UserRole)
+				<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+					<!-- Top bar -->
+					<header style="background:var(--surface-elevated);border-bottom:1px solid var(--border-default);padding:12px 28px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+						<div></div>
+						<div style="display:flex;align-items:center;gap:16px;">
+							<a
+								href="/messaging"
+								style="background:none;border:none;cursor:pointer;color:var(--text-secondary);text-decoration:none;display:inline-flex;align-items:center;gap:4px;"
+								hx-get="/messaging/notifications/unread-count"
+								hx-trigger="load, every 30s"
+								hx-target="#notification-count"
+								title="Notifications"
+							>
+								<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+								</svg>
+								<span id="notification-count" style="font-size:0.75rem;font-weight:600;"></span>
+							</a>
+							<span style="font-size:0.875rem;font-weight:500;color:var(--text-secondary);">{ data.Username }</span>
+							<form method="POST" action="/logout" style="display:inline;margin:0;">
+								<button type="submit" style="background:none;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-tertiary);padding:0;font-family:inherit;">Logout</button>
+							</form>
+						</div>
+					</header>
+					<!-- Main content -->
+					<main style="flex:1;overflow-y:auto;">
+						<div style="max-width:1200px;margin:0 auto;padding:28px;position:relative;">
+							@components.HTMXIndicator()
+							<div id="content-area">
+								{ children... }
+							</div>
+						</div>
+					</main>
+				</div>
+			</div>
+			<!-- Toast container -->
+			<div id="toast-container" style="position:fixed;top:16px;right:16px;z-index:50;display:flex;flex-direction:column;gap:8px;width:384px;max-width:calc(100vw - 2rem);"></div>
+			<script>
+				// Auto-dismiss toasts after 5s
+				document.body.addEventListener('htmx:afterSwap', function(e) {
+					if (e.detail.target && e.detail.target.id === 'toast-container') {
+						Array.from(e.detail.target.children).forEach(function(toast) {
+							setTimeout(function() {
+								toast.style.opacity = '0';
+								toast.style.transform = 'translateX(100%)';
+								toast.style.transition = 'all 300ms';
+								setTimeout(function() { toast.remove(); }, 300);
+							}, 5000);
+						});
+					}
+				});
+			</script>
+		</body>
+	</html>
+}
+
+func defaultNavSections() []components.NavSection {
+	return []components.NavSection{
+		{
+			Label: "General",
+			Items: []components.NavItem{
+				{Label: "Dashboard", URL: "/", Roles: nil},
+			},
+		},
+		{
+			Label: "Catalog",
+			Items: []components.NavItem{
+				{Label: "Browse Resources", URL: "/resources", Roles: nil},
+				{Label: "Create Resource", URL: "/resources/new", Roles: []string{"AUTHOR", "ADMIN"}},
+			},
+		},
+		{
+			Label: "Moderation",
+			Items: []components.NavItem{
+				{Label: "Review Queue", URL: "/review-queue", Roles: []string{"REVIEWER", "ADMIN"}},
+				{Label: "Reports", URL: "/moderation/reports", Roles: []string{"REVIEWER", "ADMIN"}},
+			},
+		},
+		{
+			Label: "Supplier",
+			Items: []components.NavItem{
+				{Label: "Supplier Portal", URL: "/supplier/portal", Roles: []string{"SUPPLIER", "ADMIN"}},
+				{Label: "Orders", URL: "/supplier/orders", Roles: []string{"SUPPLIER", "ADMIN"}},
+			},
+		},
+		{
+			Label: "Messaging",
+			Items: []components.NavItem{
+				{Label: "Notifications", URL: "/messaging", Roles: nil},
+			},
+		},
+		{
+			Label: "Analytics",
+			Items: []components.NavItem{
+				{Label: "Dashboard", URL: "/analytics/dashboard", Roles: []string{"ADMIN", "REVIEWER"}},
+				{Label: "Reports", URL: "/analytics/reports", Roles: []string{"ADMIN"}},
+				{Label: "Audit Log", URL: "/admin/audit-logs", Roles: []string{"ADMIN"}},
+			},
+		},
+		{
+			Label: "Admin",
+			Items: []components.NavItem{
+				{Label: "Users", URL: "/admin/users", Roles: []string{"ADMIN"}},
+				{Label: "Categories", URL: "/categories", Roles: []string{"ADMIN"}},
+				{Label: "Point Rules", URL: "/point-rules", Roles: []string{"ADMIN"}},
+			},
+		},
+	}
+}

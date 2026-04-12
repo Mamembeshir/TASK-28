@@ -1,0 +1,76 @@
+package components
+
+type NavItem struct {
+	Label   string
+	URL     string
+	Section string
+	Roles   []string
+}
+
+type NavSection struct {
+	Label string
+	Items []NavItem
+}
+
+templ Sidebar(sections []NavSection, activeRoute string, userRole string) {
+	<aside class="w-[250px] bg-[var(--surface-elevated)] border-r border-[var(--border-default)] h-screen overflow-y-auto flex-shrink-0 hidden md:flex md:flex-col">
+		<div class="px-4 py-6 flex flex-col h-full">
+			<!-- Logo -->
+			<div class="flex items-center gap-2 mb-8 px-2">
+				<div class="w-8 h-8 bg-[var(--brand-primary)] rounded-[6px] flex items-center justify-center">
+					<span class="text-white font-bold text-sm">E</span>
+				</div>
+				<span class="text-lg font-bold text-[var(--text-primary)]">EduExchange</span>
+			</div>
+			<!-- Nav -->
+			<nav class="flex-1 space-y-1">
+				for _, section := range sections {
+					if sectionVisible(section, userRole) {
+						<p class="px-2 mt-6 mb-1 text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] first:mt-0">
+							{ section.Label }
+						</p>
+						for _, item := range section.Items {
+							if itemVisible(item, userRole) {
+								<a
+									href={ templ.SafeURL(item.URL) }
+									class={ navItemClass(item.URL == activeRoute) }
+								>
+									{ item.Label }
+								</a>
+							}
+						}
+					}
+				}
+			</nav>
+		</div>
+	</aside>
+}
+
+func navItemClass(active bool) string {
+	base := "flex items-center gap-3 px-[14px] py-[8px] rounded-[6px] text-sm font-medium transition-colors duration-150 block"
+	if active {
+		return base + " bg-[var(--brand-primary-light)] text-[var(--brand-primary)]"
+	}
+	return base + " text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] hover:text-[var(--text-primary)]"
+}
+
+func sectionVisible(section NavSection, userRole string) bool {
+	for _, item := range section.Items {
+		if itemVisible(item, userRole) {
+			return true
+		}
+	}
+	return false
+}
+
+func itemVisible(item NavItem, userRole string) bool {
+	if len(item.Roles) == 0 {
+		return true
+	}
+	for _, r := range item.Roles {
+		if r == userRole {
+			return true
+		}
+	}
+	return false
+}

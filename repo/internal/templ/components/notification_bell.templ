@@ -1,0 +1,127 @@
+package components
+
+import (
+	"fmt"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+)
+
+// BellData holds data for the notification bell component.
+type BellData struct {
+	UnreadCount  int
+	RecentNotifs []model.Notification // max 5
+	AuthUser     *middleware.AuthUser
+}
+
+// bellBadgeCount returns display text for unread count (capped at "99+").
+func bellBadgeCount(count int) string {
+	if count > 99 {
+		return "99+"
+	}
+	return fmt.Sprintf("%d", count)
+}
+
+// NotificationBell renders the bell icon with unread count badge and dropdown.
+templ NotificationBell(d BellData) {
+	<div
+		class="relative"
+		hx-ext="sse"
+		sse-connect="/api/v1/events/stream"
+	>
+		<!-- Bell button -->
+		<div class="relative inline-block">
+			<button
+				type="button"
+				class="relative p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors rounded-lg hover:bg-gray-100"
+				onclick="document.getElementById('notif-dropdown').classList.toggle('hidden')"
+				aria-label="Notifications"
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+				</svg>
+				<!-- Badge -->
+				if d.UnreadCount > 0 {
+					<span
+						id="notif-badge"
+						class="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-red-500 rounded-full"
+						sse-swap="notification"
+						hx-on--sse-message="updateBellCount(event)"
+					>
+						{ bellBadgeCount(d.UnreadCount) }
+					</span>
+				} else {
+					<span
+						id="notif-badge"
+						class="hidden absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-red-500 rounded-full"
+						sse-swap="notification"
+						hx-on--sse-message="updateBellCount(event)"
+					>
+						0
+					</span>
+				}
+			</button>
+		</div>
+		<!-- Dropdown -->
+		<div
+			id="notif-dropdown"
+			class="hidden absolute right-0 top-full mt-2 w-80 bg-white border border-[var(--border-default)] rounded-xl shadow-lg z-50"
+		>
+			<div class="p-3 border-b border-[var(--border-default)] flex items-center justify-between">
+				<span class="text-sm font-semibold text-[var(--text-primary)]">Notifications</span>
+				if d.UnreadCount > 0 {
+					<span class="text-xs text-[var(--text-tertiary)]">{ fmt.Sprintf("%d unread", d.UnreadCount) }</span>
+				}
+			</div>
+			<div class="max-h-80 overflow-y-auto">
+				if len(d.RecentNotifs) == 0 {
+					<div class="p-4 text-center text-sm text-[var(--text-tertiary)]">No notifications</div>
+				} else {
+					for _, n := range d.RecentNotifs {
+						<div class="p-3 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
+							<div class="flex gap-2 items-start">
+								if !n.IsRead {
+									<div class="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-1.5"></div>
+								} else {
+									<div class="w-2 h-2 rounded-full bg-transparent flex-shrink-0 mt-1.5"></div>
+								}
+								<div class="flex-1 min-w-0">
+									<p class="text-xs font-medium text-[var(--text-primary)] truncate">{ n.Title }</p>
+									<p class="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{ n.Body }</p>
+								</div>
+							</div>
+						</div>
+					}
+				}
+			</div>
+			<div class="p-3 border-t border-[var(--border-default)]">
+				<a
+					href="/messaging"
+					class="block text-center text-sm text-[var(--brand-primary)] font-medium hover:underline"
+				>
+					View All Notifications
+				</a>
+			</div>
+		</div>
+		<!-- Close dropdown on outside click -->
+		<script>
+			document.addEventListener('click', function(e) {
+				var dropdown = document.getElementById('notif-dropdown');
+				if (dropdown && !dropdown.closest('.relative').contains(e.target)) {
+					dropdown.classList.add('hidden');
+				}
+			});
+			function updateBellCount(event) {
+				try {
+					var badge = document.getElementById('notif-badge');
+					if (badge) {
+						badge.classList.remove('hidden');
+						var current = parseInt(badge.textContent) || 0;
+						var newCount = current + 1;
+						badge.textContent = newCount > 99 ? '99+' : String(newCount);
+					}
+				} catch(e) {}
+			}
+		</script>
+	</div>
+}

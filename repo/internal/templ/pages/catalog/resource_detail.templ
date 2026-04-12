@@ -1,0 +1,219 @@
+package catalogpages
+
+import (
+	"fmt"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+type ResourceDetailData struct {
+	Resource *model.Resource
+	Versions []model.ResourceVersion
+	Reviews  []model.ResourceReview
+	AuthUser *middleware.AuthUser
+}
+
+func (d ResourceDetailData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d ResourceDetailData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return d.AuthUser.Roles[0]
+	}
+	return ""
+}
+
+func (d ResourceDetailData) isOwner() bool {
+	if d.AuthUser == nil || d.Resource == nil {
+		return false
+	}
+	return d.Resource.AuthorID == d.AuthUser.ID
+}
+
+func (d ResourceDetailData) hasRole(roles ...string) bool {
+	if d.AuthUser == nil {
+		return false
+	}
+	for _, required := range roles {
+		for _, r := range d.AuthUser.Roles {
+			if r == required {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+templ ResourceDetailPage(data ResourceDetailData) {
+	@layouts.Base(layouts.PageData{
+		Title:       data.Resource.Title,
+		ActiveRoute: "/resources",
+		Username:    data.username(),
+		UserRole:    data.userRole(),
+	}) {
+		@components.PageHeader(data.Resource.Title, []components.Breadcrumb{
+			{Label: "Resources", URL: "/resources"},
+			{Label: data.Resource.Title},
+		})
+		<div style="display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start;">
+			<!-- Main content -->
+			<div style="display:flex;flex-direction:column;gap:20px;">
+				<!-- Resource card -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);">
+					<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+						<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+							@components.Badge(data.Resource.Status.String(), data.Resource.Status.String())
+							if data.Resource.CategoryName != "" {
+								<span style="font-size:0.8rem;color:var(--text-tertiary);background:var(--surface-secondary);padding:2px 8px;border-radius:4px;">{ data.Resource.CategoryName }</span>
+							}
+						</div>
+						<div style="display:flex;gap:8px;">
+							if data.isOwner() && (data.Resource.Status == model.ResourceStatusDraft || data.Resource.Status == model.ResourceStatusRejected) {
+								<a href={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/edit") } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:4px 12px;">Edit</a>
+							}
+							if data.isOwner() && data.Resource.Status == model.ResourceStatusPublished {
+								<a href={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/edit") } class="ee-btn ee-btn--secondary" style="font-size:0.8rem;padding:4px 12px;">Edit (new version)</a>
+							}
+						</div>
+					</div>
+					if data.Resource.Description != "" {
+						<p style="color:var(--text-secondary);margin-bottom:16px;">{ data.Resource.Description }</p>
+					}
+					if data.Resource.ContentBody != "" {
+						<div style="border-top:1px solid var(--border-default);padding-top:16px;color:var(--text-primary);white-space:pre-wrap;font-size:0.9rem;line-height:1.6;">{ data.Resource.ContentBody }</div>
+					}
+					if len(data.Resource.Tags) > 0 {
+						<div style="border-top:1px solid var(--border-default);padding-top:16px;margin-top:16px;display:flex;gap:6px;flex-wrap:wrap;">
+							for _, tag := range data.Resource.Tags {
+								<span style="font-size:0.75rem;padding:2px 8px;border-radius:12px;background:var(--brand-primary-light);color:var(--brand-primary);">{ tag.Name }</span>
+							}
+						</div>
+					}
+				</div>
+				<!-- Files -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:24px;box-shadow:var(--shadow-sm);">
+					<h3 style="font-size:0.875rem;font-weight:600;margin:0 0 16px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Files</h3>
+					<div id="file-list">
+						if len(data.Resource.Files) == 0 {
+							<p style="font-size:0.875rem;color:var(--text-tertiary);">No files attached.</p>
+						} else {
+							for _, f := range data.Resource.Files {
+								@FileRow(&f)
+							}
+						}
+					</div>
+					if data.isOwner() || data.hasRole("ADMIN") {
+						<form
+							hx-post={ "/resources/" + data.Resource.ID.String() + "/files" }
+							hx-target="#file-list"
+							hx-swap="beforeend"
+							hx-encoding="multipart/form-data"
+							style="margin-top:16px;display:flex;gap:8px;align-items:center;"
+						>
+							<input type="file" name="file" class="ee-input" style="flex:1;"/>
+							<button type="submit" class="ee-btn ee-btn--primary" style="white-space:nowrap;">Upload</button>
+						</form>
+					}
+				</div>
+			</div>
+			<!-- Sidebar -->
+			<div style="display:flex;flex-direction:column;gap:16px;">
+				<!-- Workflow actions -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;box-shadow:var(--shadow-sm);">
+					<h3 style="font-size:0.875rem;font-weight:600;margin:0 0 16px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Actions</h3>
+					<div style="display:flex;flex-direction:column;gap:8px;">
+						if data.isOwner() && data.Resource.Status == model.ResourceStatusDraft {
+							<form method="POST" action={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/submit") }>
+								<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.Resource.Version) }/>
+								<button type="submit" class="ee-btn ee-btn--primary" style="width:100%;">Submit for Review</button>
+							</form>
+						}
+						if data.isOwner() && data.Resource.Status == model.ResourceStatusRejected {
+							<form method="POST" action={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/revise") }>
+								<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.Resource.Version) }/>
+								<button type="submit" class="ee-btn ee-btn--secondary" style="width:100%;">Mark as Draft (Revise)</button>
+							</form>
+						}
+						if data.hasRole("REVIEWER", "ADMIN") && data.Resource.Status == model.ResourceStatusPendingReview {
+							<form method="POST" action={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/approve") }>
+								<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.Resource.Version) }/>
+								<button type="submit" class="ee-btn ee-btn--primary" style="width:100%;">Approve</button>
+							</form>
+							<form method="POST" action={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/reject") } style="display:flex;flex-direction:column;gap:6px;">
+								<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.Resource.Version) }/>
+								<textarea class="ee-input" name="notes" placeholder="Rejection notes…" rows="3" style="font-size:0.85rem;"></textarea>
+								<button type="submit" class="ee-btn ee-btn--danger" style="width:100%;">Reject</button>
+							</form>
+						}
+						if data.hasRole("ADMIN") && data.Resource.Status == model.ResourceStatusApproved {
+							<form method="POST" action={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/publish") }>
+								<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.Resource.Version) }/>
+								<button type="submit" class="ee-btn ee-btn--primary" style="width:100%;">Publish</button>
+							</form>
+						}
+						if data.hasRole("ADMIN") && data.Resource.Status == model.ResourceStatusPublished {
+							<form method="POST" action={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/takedown") } style="display:flex;flex-direction:column;gap:6px;">
+								<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.Resource.Version) }/>
+								<input class="ee-input" type="text" name="reason" placeholder="Takedown reason…"/>
+								<button type="submit" class="ee-btn ee-btn--danger" style="width:100%;">Take Down</button>
+							</form>
+						}
+						if data.hasRole("ADMIN") && data.Resource.Status == model.ResourceStatusTakenDown {
+							<form method="POST" action={ templ.SafeURL("/resources/" + data.Resource.ID.String() + "/restore") }>
+								<input type="hidden" name="version" value={ fmt.Sprintf("%d", data.Resource.Version) }/>
+								<button type="submit" class="ee-btn ee-btn--primary" style="width:100%;">Restore (Re-publish)</button>
+							</form>
+						}
+					</div>
+				</div>
+				<!-- Meta -->
+				<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;box-shadow:var(--shadow-sm);font-size:0.8rem;color:var(--text-secondary);">
+					<div style="display:flex;flex-direction:column;gap:6px;">
+						<div><strong>Author:</strong> { data.Resource.AuthorName }</div>
+						<div><strong>Version:</strong> { fmt.Sprintf("%d", data.Resource.CurrentVersionNumber) }</div>
+					</div>
+				</div>
+				<!-- Reviews -->
+				if len(data.Reviews) > 0 {
+					<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:10px;padding:20px;box-shadow:var(--shadow-sm);">
+						<h3 style="font-size:0.875rem;font-weight:600;margin:0 0 12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);">Reviews</h3>
+						for _, rev := range data.Reviews {
+							<div style="border-top:1px solid var(--border-default);padding-top:10px;margin-top:10px;font-size:0.8rem;">
+								<div style="display:flex;justify-content:space-between;">
+									<strong>{ rev.ReviewerName }</strong>
+									@components.Badge(rev.Action, rev.Action)
+								</div>
+								if rev.Notes != "" {
+									<p style="margin:4px 0 0;color:var(--text-secondary);">{ rev.Notes }</p>
+								}
+							</div>
+						}
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ FileRow(f *model.ResourceFile) {
+	<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-default);">
+		<div style="font-size:0.875rem;">
+			<a href={ templ.SafeURL("/resources/" + f.ResourceID.String() + "/files/" + f.ID.String()) } style="color:var(--brand-primary);">{ f.OriginalName }</a>
+			<span style="font-size:0.75rem;color:var(--text-tertiary);margin-left:8px;">{ f.MIMEType }</span>
+		</div>
+		<button
+			hx-delete={ "/resources/" + f.ResourceID.String() + "/files/" + f.ID.String() }
+			hx-target="closest div[style]"
+			hx-swap="outerHTML"
+			hx-confirm="Remove this file?"
+			style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:0.75rem;"
+		>Remove</button>
+	</div>
+}

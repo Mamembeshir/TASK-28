@@ -1,0 +1,118 @@
+package gamificationpages
+
+import (
+	"fmt"
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// PointRulesData holds data for the point rules admin page.
+type PointRulesData struct {
+	Rules    []model.PointRule
+	AuthUser *middleware.AuthUser
+}
+
+func (d PointRulesData) username() string {
+	if d.AuthUser != nil {
+		return d.AuthUser.Username
+	}
+	return ""
+}
+
+func (d PointRulesData) userRole() string {
+	if d.AuthUser != nil && len(d.AuthUser.Roles) > 0 {
+		return string(d.AuthUser.Roles[0])
+	}
+	return ""
+}
+
+// PointRulesPage renders the admin point rules management page.
+templ PointRulesPage(d PointRulesData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Point Rules",
+		ActiveRoute: "/point-rules",
+		Username:    d.username(),
+		UserRole:    d.userRole(),
+	}) {
+		<h1 style="font-size:1.5rem;font-weight:600;color:var(--text-primary);margin-bottom:24px;">Point Rules</h1>
+		@PointRulesTable(d.Rules)
+	}
+}
+
+// PointRulesTable renders just the rules table.
+templ PointRulesTable(rules []model.PointRule) {
+	<div class="bg-white rounded-xl border border-border-default shadow-sm overflow-hidden">
+		if len(rules) == 0 {
+			<div class="p-8 text-center text-gray-400">No point rules configured.</div>
+		} else {
+			<table class="w-full text-sm">
+				<thead class="bg-gray-50 border-b border-gray-200">
+					<tr>
+						<th class="text-left px-5 py-3 text-gray-500 font-medium">Event</th>
+						<th class="text-right px-5 py-3 text-gray-500 font-medium">Points</th>
+						<th class="text-left px-5 py-3 text-gray-500 font-medium">Description</th>
+						<th class="text-center px-5 py-3 text-gray-500 font-medium">Active</th>
+						<th class="px-5 py-3"></th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-100">
+					for _, rule := range rules {
+						@PointRuleRow(rule)
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}
+
+// PointRuleRow renders a single editable rule row.
+templ PointRuleRow(rule model.PointRule) {
+	<tr id={ fmt.Sprintf("rule-%s", rule.ID) }>
+		<td class="px-5 py-3 font-mono text-xs text-gray-700">{ rule.EventType }</td>
+		<td class="px-5 py-3 text-right">
+			<input
+				type="number"
+				name="points"
+				value={ fmt.Sprintf("%d", rule.Points) }
+				class="w-20 text-right border border-gray-200 rounded px-2 py-1 text-sm"
+				form={ fmt.Sprintf("rule-form-%s", rule.ID) }
+			/>
+		</td>
+		<td class="px-5 py-3">
+			<input
+				type="text"
+				name="description"
+				value={ rule.Description }
+				class="w-full border border-gray-200 rounded px-2 py-1 text-sm"
+				form={ fmt.Sprintf("rule-form-%s", rule.ID) }
+			/>
+		</td>
+		<td class="px-5 py-3 text-center">
+			<input
+				type="checkbox"
+				name="is_active"
+				if rule.IsActive {
+					checked
+				}
+				form={ fmt.Sprintf("rule-form-%s", rule.ID) }
+				class="h-4 w-4 text-blue-600"
+			/>
+		</td>
+		<td class="px-5 py-3 text-right">
+			<form
+				id={ fmt.Sprintf("rule-form-%s", rule.ID) }
+				hx-put={ fmt.Sprintf("/admin/point-rules/%s", rule.ID) }
+				hx-target={ fmt.Sprintf("#rule-%s", rule.ID) }
+				hx-swap="outerHTML"
+			>
+				<button
+					type="submit"
+					class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition-colors"
+				>
+					Save
+				</button>
+			</form>
+		</td>
+	</tr>
+}

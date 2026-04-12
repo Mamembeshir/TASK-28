@@ -1,0 +1,158 @@
+package adminpages
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/eduexchange/eduexchange/internal/middleware"
+	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/templ/components"
+	"github.com/eduexchange/eduexchange/internal/templ/layouts"
+)
+
+// AuditLogData holds data for the audit log viewer page.
+type AuditLogData struct {
+	Entries  []model.AuditLogEntry
+	Total    int
+	Page     int
+	PageSize int
+	AuthUser *middleware.AuthUser
+}
+
+func (d AuditLogData) totalPages() int {
+	if d.PageSize <= 0 {
+		return 1
+	}
+	pages := d.Total / d.PageSize
+	if d.Total%d.PageSize != 0 {
+		pages++
+	}
+	return pages
+}
+
+templ AuditLogPage(data AuditLogData) {
+	@layouts.Base(layouts.PageData{
+		Title:       "Audit Log",
+		ActiveRoute: "/admin/audit-logs",
+		Username:    auditLogUsername(data.AuthUser),
+		UserRole:    "ADMIN",
+	}) {
+		@components.PageHeader("Audit Log", []components.Breadcrumb{
+			{Label: fmt.Sprintf("%d entries", data.Total)},
+		}) {
+			<button
+				class="ee-btn ee-btn--secondary"
+				hx-post="/admin/audit-logs/export"
+				hx-target="#export-result"
+				hx-swap="innerHTML"
+				hx-include="#audit-filter-form"
+			>Export CSV</button>
+		}
+		<!-- Export result -->
+		<div id="export-result" style="margin-bottom:12px;font-size:0.875rem;color:var(--text-secondary);"></div>
+		<!-- Filter bar -->
+		<form
+			id="audit-filter-form"
+			hx-get="/admin/audit-logs"
+			hx-target="#audit-table"
+			hx-swap="innerHTML"
+			hx-push-url="true"
+			style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-end;background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:8px;padding:16px;"
+		>
+			<div style="flex:1;min-width:160px;">
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Actor ID</label>
+				<input class="ee-input" type="text" name="actor_id" placeholder="UUID…" style="width:100%;"/>
+			</div>
+			<div style="min-width:140px;">
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Entity Type</label>
+				<select class="ee-input" name="entity_type" style="min-width:140px;">
+					<option value="">All types</option>
+					for _, et := range []string{"resource","user","order","report","category","vote","review"} {
+						<option value={ et }>{ et }</option>
+					}
+				</select>
+			</div>
+			<div style="min-width:140px;">
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Action</label>
+				<input class="ee-input" type="text" name="action" placeholder="e.g. CREATE…"/>
+			</div>
+			<div>
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">From</label>
+				<input class="ee-input" type="date" name="from"/>
+			</div>
+			<div>
+				<label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">To</label>
+				<input class="ee-input" type="date" name="to"/>
+			</div>
+			<button type="submit" class="ee-btn ee-btn--secondary">Filter</button>
+		</form>
+		<!-- Audit log table -->
+		<div id="audit-table">
+			@auditLogTable(data)
+		</div>
+	}
+}
+
+templ auditLogTable(data AuditLogData) {
+	<div style="background:var(--surface-elevated);border:1px solid var(--border-default);border-radius:8px;overflow:hidden;">
+		<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+			<thead>
+				<tr style="background:var(--surface-secondary);position:sticky;top:0;z-index:1;">
+					<th style="padding:10px 12px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">Timestamp</th>
+					<th style="padding:10px 12px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;">Actor</th>
+					<th style="padding:10px 12px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;">Action</th>
+					<th style="padding:10px 12px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;">Entity Type</th>
+					<th style="padding:10px 12px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;">Entity ID</th>
+					<th style="padding:10px 12px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;">IP</th>
+					<th style="padding:10px 12px;text-align:left;font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;">Reason</th>
+				</tr>
+			</thead>
+			<tbody>
+				if len(data.Entries) == 0 {
+					<tr>
+						<td colspan="7" style="padding:40px;text-align:center;color:var(--text-tertiary);">No audit log entries found.</td>
+					</tr>
+				}
+				for _, entry := range data.Entries {
+					<tr
+						style="border-top:1px solid var(--border-default);"
+						onmouseover="this.style.background='var(--surface-secondary)'"
+						onmouseout="this.style.background=''"
+					>
+						<td style="padding:10px 12px;color:var(--text-secondary);white-space:nowrap;font-size:0.8rem;">{ entry.Timestamp.Format("2006-01-02 15:04:05") }</td>
+						<td style="padding:10px 12px;color:var(--text-primary);font-weight:500;">{ entry.ActorUsername }</td>
+						<td style="padding:10px 12px;">
+							<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:0.75rem;font-weight:600;background:var(--surface-secondary);color:var(--text-primary);">{ entry.Action }</span>
+						</td>
+						<td style="padding:10px 12px;color:var(--text-secondary);">{ entry.EntityType }</td>
+						<td style="padding:10px 12px;color:var(--text-tertiary);font-family:monospace;font-size:0.75rem;">{ auditEntryIDShort(entry) }</td>
+						<td style="padding:10px 12px;color:var(--text-tertiary);font-size:0.8rem;">{ entry.IPAddress }</td>
+						<td style="padding:10px 12px;color:var(--text-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title={ entry.Reason }>{ entry.Reason }</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+	<!-- Pagination -->
+	if data.totalPages() > 1 {
+		@components.Pagination(data.Page, data.totalPages(), "/admin/audit-logs")
+	}
+	<div style="font-size:0.875rem;color:var(--text-tertiary);margin-top:12px;">
+		Showing { strconv.Itoa(len(data.Entries)) } of { strconv.Itoa(data.Total) } entries
+	</div>
+}
+
+func auditLogUsername(u *middleware.AuthUser) string {
+	if u == nil {
+		return ""
+	}
+	return u.Username
+}
+
+func auditEntryIDShort(e model.AuditLogEntry) string {
+	s := e.EntityID.String()
+	if len(s) > 8 {
+		return s[:8] + "…"
+	}
+	return s
+}

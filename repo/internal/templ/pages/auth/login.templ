@@ -1,0 +1,60 @@
+package authpages
+
+import "github.com/eduexchange/eduexchange/internal/templ/layouts"
+
+type LoginData struct {
+	Error    string
+	Username string
+	// set when ?registered=1 query param is present
+	Registered bool
+}
+
+templ LoginPage(data LoginData) {
+	@layouts.Auth("Sign In") {
+		<h1 style="font-size:1.25rem;font-weight:700;color:var(--text-primary);margin:0 0 24px;">Sign in to your account</h1>
+		if data.Registered {
+			<div style="background:var(--success-light);border:1px solid var(--success);color:var(--success);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:0.875rem;">
+				Registration successful! You can now sign in.
+			</div>
+		}
+		if data.Error != "" {
+			<div id="login-error" style="background:var(--danger-light);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:0.875rem;">
+				{ data.Error }
+			</div>
+		}
+		<form method="POST" action="/login">
+			<div style="margin-bottom:16px;">
+				<label style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" for="username">Username</label>
+				<input
+					class="ee-input"
+					type="text"
+					id="username"
+					name="username"
+					value={ data.Username }
+					placeholder="your_username"
+					autocomplete="username"
+					required
+				/>
+			</div>
+			<div style="margin-bottom:24px;">
+				<label style="display:block;font-size:0.875rem;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" for="password">Password</label>
+				<input
+					class="ee-input"
+					type="password"
+					id="password"
+					name="password"
+					placeholder="••••••••••••"
+					autocomplete="current-password"
+					required
+				/>
+			</div>
+			<button type="submit" class="ee-btn ee-btn--primary" style="width:100%;justify-content:center;">
+				Sign In
+			</button>
+		</form>
+		<p style="text-align:center;margin-top:20px;font-size:0.875rem;color:var(--text-tertiary);">
+			Don&#39;t have an account?
+			<a href="/register" style="color:var(--brand-primary);font-weight:500;">Create one</a>
+		</p>
+	}
+}

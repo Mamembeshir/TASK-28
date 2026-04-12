@@ -1,0 +1,41 @@
+package engagementpages
+
+import (
+	"fmt"
+	"github.com/google/uuid"
+)
+
+// FavoriteData holds favorite state for rendering the favorite toggle.
+type FavoriteData struct {
+	ResourceID  uuid.UUID
+	IsFavorited bool
+}
+
+// FavoriteButton renders an HTMX heart toggle button.
+templ FavoriteButton(d FavoriteData) {
+	<button
+		id={ fmt.Sprintf("fav-%s", d.ResourceID) }
+		if d.IsFavorited {
+			hx-delete={ fmt.Sprintf("/resources/%s/favorite", d.ResourceID) }
+		} else {
+			hx-post={ fmt.Sprintf("/resources/%s/favorite", d.ResourceID) }
+		}
+		hx-target={ fmt.Sprintf("#fav-%s", d.ResourceID) }
+		hx-swap="outerHTML"
+		class={ favoriteButtonClass(d.IsFavorited) }
+		title="Favorite"
+	>
+		if d.IsFavorited {
+			&#10084;&#65039;
+		} else {
+			&#9825;
+		}
+	</button>
+}
+
+func favoriteButtonClass(active bool) string {
+	if active {
+		return "text-red-500 hover:text-red-600 text-xl transition-colors"
+	}
+	return "text-gray-400 hover:text-red-400 text-xl transition-colors"
+}
