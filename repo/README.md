@@ -96,10 +96,4 @@ static/              CSS, JS, fonts
 tests/
   frontend/          Templ render tests (no DB required)
   integration/       End-to-end HTTP tests (requires Docker DB)
-docs/
-  api-spec.md        Full API endpoint reference
-  design.md          Architecture, state machines, design decisions
-  questions.md       Open questions and future considerations
 ```
-
-See `docs/` for detailed documentation.
