@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/sanitize"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -188,7 +189,7 @@ func (r *postgresRepo) DeleteResource(ctx context.Context, id uuid.UUID) error {
 // ─── Resource Versions ────────────────────────────────────────────────────────
 
 func (r *postgresRepo) CreateVersion(ctx context.Context, v *model.ResourceVersion) error {
-	snap, err := json.Marshal(v.DataSnapshot)
+	snap, err := sanitize.JSON(v.DataSnapshot)
 	if err != nil {
 		return err
 	}
@@ -488,7 +489,7 @@ func (r *postgresRepo) DeleteTag(ctx context.Context, id uuid.UUID) error {
 // ─── Bulk Import Jobs ────────────────────────────────────────────────────────
 
 func (r *postgresRepo) CreateImportJob(ctx context.Context, job *model.BulkImportJob) error {
-	resultsJSON, _ := json.Marshal(job.Results)
+	resultsJSON, _ := sanitize.JSON(job.Results)
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO bulk_import_jobs (id, uploaded_by, file_path, original_filename, status,
 		  total_rows, valid_rows, invalid_rows, results_json, created_at)
@@ -523,7 +524,7 @@ func (r *postgresRepo) GetImportJob(ctx context.Context, id uuid.UUID) (*model.B
 }
 
 func (r *postgresRepo) UpdateImportJob(ctx context.Context, job *model.BulkImportJob) error {
-	resultsJSON, _ := json.Marshal(job.Results)
+	resultsJSON, _ := sanitize.JSON(job.Results)
 	_, err := r.pool.Exec(ctx,
 		`UPDATE bulk_import_jobs
 		 SET status=$1, total_rows=$2, valid_rows=$3, invalid_rows=$4, results_json=$5, completed_at=$6

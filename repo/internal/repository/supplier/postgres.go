@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/sanitize"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -116,7 +117,7 @@ func (r *postgresRepo) GetAllActiveSuppliers(ctx context.Context) ([]model.Suppl
 // ── Orders ────────────────────────────────────────────────────────────────────
 
 func (r *postgresRepo) CreateOrder(ctx context.Context, o *model.SupplierOrder) error {
-	linesJSON, err := json.Marshal(o.OrderLines)
+	linesJSON, err := sanitize.JSON(o.OrderLines)
 	if err != nil {
 		return fmt.Errorf("marshal order lines: %w", err)
 	}

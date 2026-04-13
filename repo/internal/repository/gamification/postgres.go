@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/sanitize"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -288,7 +289,7 @@ func (r *postgresRepo) GetNewReleases(ctx context.Context, limit int) ([]model.R
 }
 
 func (r *postgresRepo) CreateRankingArchive(ctx context.Context, archive *model.RankingArchive) error {
-	entriesJSON, err := json.Marshal(archive.Entries)
+	entriesJSON, err := sanitize.JSON(archive.Entries)
 	if err != nil {
 		return err
 	}

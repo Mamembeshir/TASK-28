@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/sanitize"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -276,7 +277,7 @@ func (r *postgresRepo) ListFollowerIDs(ctx context.Context, authorID uuid.UUID) 
 // ── Anomaly Flags ─────────────────────────────────────────────────────────────
 
 func (r *postgresRepo) CreateAnomalyFlag(ctx context.Context, flag *model.AnomalyFlag) error {
-	evidenceJSON, err := json.Marshal(flag.EvidenceJSON)
+	evidenceJSON, err := sanitize.JSON(flag.EvidenceJSON)
 	if err != nil {
 		return err
 	}

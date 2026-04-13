@@ -2,10 +2,11 @@ package audit
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/eduexchange/eduexchange/internal/sanitize"
 )
 
 type Service struct {
@@ -31,12 +32,12 @@ type Entry struct {
 }
 
 func (s *Service) Record(ctx context.Context, entry Entry) error {
-	beforeJSON, err := marshalNullable(entry.BeforeData)
+	beforeJSON, err := sanitize.JSONNullable(entry.BeforeData)
 	if err != nil {
 		return err
 	}
 
-	afterJSON, err := marshalNullable(entry.AfterData)
+	afterJSON, err := sanitize.JSONNullable(entry.AfterData)
 	if err != nil {
 		return err
 	}
@@ -53,9 +54,3 @@ func (s *Service) Record(ctx context.Context, entry Entry) error {
 	return err
 }
 
-func marshalNullable(v interface{}) ([]byte, error) {
-	if v == nil {
-		return nil, nil
-	}
-	return json.Marshal(v)
-}

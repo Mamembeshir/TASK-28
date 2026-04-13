@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/sanitize"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -222,7 +223,7 @@ func (r *postgresRepo) CreateScheduledReport(ctx context.Context, report *model.
 	if report.ID == uuid.Nil {
 		report.ID = uuid.New()
 	}
-	paramsJSON, err := json.Marshal(report.Parameters)
+	paramsJSON, err := sanitize.JSON(report.Parameters)
 	if err != nil {
 		return err
 	}
@@ -320,7 +321,7 @@ func (r *postgresRepo) ListScheduledReports(ctx context.Context, page, pageSize 
 }
 
 func (r *postgresRepo) UpdateScheduledReport(ctx context.Context, report *model.ScheduledReport) error {
-	paramsJSON, err := json.Marshal(report.Parameters)
+	paramsJSON, err := sanitize.JSON(report.Parameters)
 	if err != nil {
 		return err
 	}

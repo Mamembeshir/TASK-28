@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eduexchange/eduexchange/internal/model"
+	"github.com/eduexchange/eduexchange/internal/sanitize"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -127,7 +128,7 @@ func (r *postgresRepo) ListReports(ctx context.Context, status string, page, pag
 // ── Moderation Actions ────────────────────────────────────────────────────────
 
 func (r *postgresRepo) CreateModerationAction(ctx context.Context, a *model.ModerationAction) error {
-	evidenceBytes, err := json.Marshal(a.EvidenceJSON)
+	evidenceBytes, err := sanitize.JSON(a.EvidenceJSON)
 	if err != nil {
 		evidenceBytes = []byte("{}")
 	}
