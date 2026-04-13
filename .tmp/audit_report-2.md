@@ -1,7 +1,7 @@
 # Delivery Acceptance & Project Architecture Audit (Static-Only, Re-check)
 
 ## 1. Verdict
-- Overall conclusion: **Partial Pass (improved; no remaining Blocker findings in this re-check)**.
+- Overall conclusion: **Partial Pass **.
 - Change vs previous report: prior high issues on CSRF absence, like-ring semantics, voting suspension gate, and tier-threshold escalation wiring are now materially addressed in code.
 
 ## 2. Scope and Static Verification Boundary
