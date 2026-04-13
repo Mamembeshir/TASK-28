@@ -154,7 +154,7 @@ func (r *postgresRepo) GetApprovalCycleTime(ctx context.Context) (float64, error
 		`SELECT AVG(EXTRACT(EPOCH FROM (ra.created_at - r.created_at))/3600)
 		 FROM resource_reviews ra
 		 JOIN resources r ON r.id = ra.resource_id
-		 WHERE ra.decision = 'APPROVED'`,
+		 WHERE ra.action = 'APPROVED'`,
 	).Scan(&avg)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

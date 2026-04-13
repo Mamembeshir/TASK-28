@@ -91,32 +91,26 @@ func buildRouter() *gin.Engine {
 }
 
 func truncateAll(ctx context.Context) {
-	tables := []string{
-		// Analytics
-		"scheduled_reports", "analytics_summary",
-		// Notifications
-		"notification_retry_queue", "notification_subscriptions", "notifications",
-		// Supplier (before users due to FK)
-		"supplier_kpis", "supplier_qc_results", "supplier_asns", "supplier_orders", "suppliers",
-		// Moderation (before resources due to FK)
-		"user_bans", "moderation_actions", "reports",
-		// Engagement
-		"anomaly_flags", "follows", "favorites", "votes",
-		// Gamification
-		"user_badges", "user_points", "point_transactions",
-		"ranking_archives",
-		// Search
-		"user_search_history", "search_terms", "search_index",
-		// Catalog
-		"resource_reviews", "resource_files", "resource_tags",
-		"resource_versions", "bulk_import_jobs", "resources",
-		"tags", "categories",
-		// Auth
-		"sessions", "user_roles", "user_profiles", "users", "audit_logs",
-		"rate_limit_counters",
-	}
-	for _, t := range tables {
-		testPool.Exec(ctx, "TRUNCATE TABLE "+t+" CASCADE")
+	// Single atomic TRUNCATE avoids lock-contention issues that can arise when
+	// individual statements are issued while a previous test's HTTP handler
+	// goroutine is still draining.  Errors are no longer silently swallowed.
+	const q = `TRUNCATE TABLE
+		scheduled_reports, analytics_summary,
+		notification_retry_queue, notification_subscriptions, notifications,
+		supplier_kpis, supplier_qc_results, supplier_asns, supplier_orders, suppliers,
+		user_bans, moderation_actions, reports,
+		anomaly_flags, follows, favorites, votes,
+		user_badges, user_points, point_transactions,
+		ranking_archives,
+		user_search_history, search_terms, search_index,
+		resource_reviews, resource_files, resource_tags,
+		resource_versions, bulk_import_jobs, resources,
+		tags, categories,
+		sessions, user_roles, user_profiles, users, audit_logs,
+		rate_limit_counters
+	CASCADE`
+	if _, err := testPool.Exec(ctx, q); err != nil {
+		panic("truncateAll failed: " + err.Error())
 	}
 }
 

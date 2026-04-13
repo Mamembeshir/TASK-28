@@ -3,8 +3,31 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# ── Host: delegate everything to Docker ───────────────────────────────────────
+# Minimum Go version required by go.mod
+REQUIRED_GO_MINOR=22
+
+# ── Check whether the local Go toolchain is new enough ────────────────────────
+go_is_new_enough() {
+    command -v go &>/dev/null || return 1
+    local ver
+    ver="$(go version | grep -oP 'go1\.(\d+)' | head -1)"
+    local minor="${ver#go1.}"
+    [ -n "$minor" ] && [ "$minor" -ge "$REQUIRED_GO_MINOR" ] 2>/dev/null
+}
+
+# ── Decide whether to delegate to Docker ──────────────────────────────────────
+# Run inside Docker when:
+#   1. We are on the host (no /.dockerenv), OR
+#   2. We are inside a container whose Go is too old.
+USE_DOCKER=false
 if [ ! -f /.dockerenv ]; then
+    USE_DOCKER=true
+elif ! go_is_new_enough; then
+    echo "⚠  Container Go is too old (need ≥1.$REQUIRED_GO_MINOR). Delegating to Docker."
+    USE_DOCKER=true
+fi
+
+if $USE_DOCKER; then
     echo "EduExchange Test Suite — delegating to Docker"
 
     # Copy .env.example → .env if .env is missing (needed by docker-compose)
@@ -22,20 +45,18 @@ if [ ! -f /.dockerenv ]; then
         sleep 1
     done
 
-    # Run tests in the builder image (has Go toolchain + templ CLI)
+    # Run tests in the builder image (has Go 1.22+ toolchain + templ CLI).
+    # --build ensures the image is rebuilt if the Dockerfile changed.
     docker-compose -f "$SCRIPT_DIR/docker-compose.yml" \
         --profile test \
-        run --rm test bash run_tests.sh "$@"
+        run --build --rm test bash run_tests.sh "$@"
     STATUS=$?
 
     exit $STATUS
 fi
 
-# ── Inside container ──────────────────────────────────────────────────────────
-if ! command -v go &>/dev/null; then
-    echo "ERROR: Go not found inside container." >&2
-    exit 1
-fi
+# ── Inside container with a suitable Go toolchain ────────────────────────────
+echo "Go: $(go version)"
 
 # Generate templ files (no-op if already up to date)
 templ generate 2>/dev/null || true
