@@ -113,11 +113,9 @@ func TestCreateReport_Success(t *testing.T) {
 func TestCreateReport_RequiresAuth(t *testing.T) {
 	truncate(t)
 
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	// Use publicClient so the request carries a valid CSRF token.
+	// Without auth the server should reject with 302 (redirect to login) or 401.
+	client := publicClient(t)
 
 	resp, err := client.PostForm(testServer.URL+"/reports", url.Values{
 		"resource_id": {uuid.New().String()},
