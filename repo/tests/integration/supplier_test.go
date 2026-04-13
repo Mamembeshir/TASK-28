@@ -66,12 +66,8 @@ func createOrderViaAdmin(t *testing.T, adminToken, supplierID string) string {
 	}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
 
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "create order should return 201")
@@ -103,12 +99,8 @@ func TestCreateOrder_Success(t *testing.T) {
 	}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
 
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -143,12 +135,8 @@ func TestConfirmDeliveryDate_Success(t *testing.T) {
 	}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/confirm", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: supToken})
 
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, supToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -181,9 +169,7 @@ func TestSubmitASN_Success(t *testing.T) {
 	formData := url.Values{"delivery_date": {deliveryDate}}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/confirm", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: supToken})
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, supToken).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -196,8 +182,7 @@ func TestSubmitASN_Success(t *testing.T) {
 	}
 	req2, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/asn", strings.NewReader(asnData.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req2.AddCookie(&http.Cookie{Name: "session_token", Value: supToken})
-	resp2, err := client.Do(req2)
+	resp2, err := authedClient(t, supToken).Do(req2)
 	require.NoError(t, err)
 	defer resp2.Body.Close()
 
@@ -223,29 +208,25 @@ func TestConfirmReceipt_Success(t *testing.T) {
 	supplierID := createSupplierDirect(t, "RCPT Supplier")
 	linkUserToSupplier(t, "sup_rcpt", supplierID)
 	orderID := createOrderViaAdmin(t, adminToken, supplierID)
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 
 	// Confirm delivery date
 	deliveryDate := time.Now().Add(7 * 24 * time.Hour).Format("2006-01-02")
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/confirm",
 		strings.NewReader(url.Values{"delivery_date": {deliveryDate}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: supToken})
-	resp, _ := client.Do(req)
+	resp, _ := authedClient(t, supToken).Do(req)
 	resp.Body.Close()
 
 	// Submit ASN
 	asnData := url.Values{"tracking_info": {"TRACK-999"}, "shipped_at": {time.Now().Format("2006-01-02")}}
 	req2, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/asn", strings.NewReader(asnData.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req2.AddCookie(&http.Cookie{Name: "session_token", Value: supToken})
-	resp2, _ := client.Do(req2)
+	resp2, _ := authedClient(t, supToken).Do(req2)
 	resp2.Body.Close()
 
 	// Admin confirms receipt
 	req3, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/receive", nil)
-	req3.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
-	resp3, err := client.Do(req3)
+	resp3, err := authedClient(t, adminToken).Do(req3)
 	require.NoError(t, err)
 	defer resp3.Body.Close()
 
@@ -271,9 +252,8 @@ func TestSubmitQCResult_Pass(t *testing.T) {
 	supplierID := createSupplierDirect(t, "QCP Supplier")
 	linkUserToSupplier(t, "sup_qcp", supplierID)
 	orderID := createOrderViaAdmin(t, adminToken, supplierID)
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 
-	advanceOrderToReceived(t, client, adminToken, supToken, orderID)
+	advanceOrderToReceived(t, adminToken, supToken, orderID)
 
 	// Submit QC Pass
 	qcData := url.Values{
@@ -284,8 +264,7 @@ func TestSubmitQCResult_Pass(t *testing.T) {
 	}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/qc", strings.NewReader(qcData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -311,9 +290,8 @@ func TestSubmitQCResult_Fail(t *testing.T) {
 	supplierID := createSupplierDirect(t, "QCF Supplier")
 	linkUserToSupplier(t, "sup_qcf", supplierID)
 	orderID := createOrderViaAdmin(t, adminToken, supplierID)
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 
-	advanceOrderToReceived(t, client, adminToken, supToken, orderID)
+	advanceOrderToReceived(t, adminToken, supToken, orderID)
 
 	qcData := url.Values{
 		"inspected_units": {"100"},
@@ -323,8 +301,7 @@ func TestSubmitQCResult_Fail(t *testing.T) {
 	}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/qc", strings.NewReader(qcData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -350,15 +327,13 @@ func TestCloseOrder_Success(t *testing.T) {
 	supplierID := createSupplierDirect(t, "CLS Supplier")
 	linkUserToSupplier(t, "sup_cls", supplierID)
 	orderID := createOrderViaAdmin(t, adminToken, supplierID)
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 
-	advanceOrderToReceived(t, client, adminToken, supToken, orderID)
-	submitQCPass(t, client, adminToken, orderID)
+	advanceOrderToReceived(t, adminToken, supToken, orderID)
+	submitQCPass(t, adminToken, orderID)
 
 	// Close
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/close", nil)
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -380,10 +355,8 @@ func TestCancelOrder_Success(t *testing.T) {
 	supplierID := createSupplierDirect(t, "CAN Supplier")
 	orderID := createOrderViaAdmin(t, adminToken, supplierID)
 
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/cancel", nil)
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -591,10 +564,8 @@ func TestSupplierUserSeesOwnOrdersOnly(t *testing.T) {
 	_ = createOrderViaAdmin(t, adminToken, sup2.ID.String())
 
 	// Supplier 1 sees only their orders
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 	req, _ := http.NewRequest("GET", testServer.URL+"/supplier/orders", nil)
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: sup1Token})
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, sup1Token).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -616,7 +587,7 @@ func TestSupplierUserSeesOwnOrdersOnly(t *testing.T) {
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 
-func advanceOrderToReceived(t *testing.T, client *http.Client, adminToken, supToken, orderID string) {
+func advanceOrderToReceived(t *testing.T, adminToken, supToken, orderID string) {
 	t.Helper()
 
 	// Confirm delivery date
@@ -624,8 +595,7 @@ func advanceOrderToReceived(t *testing.T, client *http.Client, adminToken, supTo
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/confirm",
 		strings.NewReader(url.Values{"delivery_date": {deliveryDate}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: supToken})
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, supToken).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 
@@ -636,20 +606,18 @@ func advanceOrderToReceived(t *testing.T, client *http.Client, adminToken, supTo
 	}
 	req2, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/asn", strings.NewReader(asnData.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req2.AddCookie(&http.Cookie{Name: "session_token", Value: supToken})
-	resp2, err := client.Do(req2)
+	resp2, err := authedClient(t, supToken).Do(req2)
 	require.NoError(t, err)
 	resp2.Body.Close()
 
 	// Confirm receipt
 	req3, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/receive", nil)
-	req3.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
-	resp3, err := client.Do(req3)
+	resp3, err := authedClient(t, adminToken).Do(req3)
 	require.NoError(t, err)
 	resp3.Body.Close()
 }
 
-func submitQCPass(t *testing.T, client *http.Client, adminToken, orderID string) {
+func submitQCPass(t *testing.T, adminToken, orderID string) {
 	t.Helper()
 	qcData := url.Values{
 		"inspected_units": {"100"},
@@ -659,8 +627,7 @@ func submitQCPass(t *testing.T, client *http.Client, adminToken, orderID string)
 	}
 	req, _ := http.NewRequest("POST", testServer.URL+"/supplier/orders/"+orderID+"/qc", strings.NewReader(qcData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 }
@@ -679,7 +646,7 @@ func TestCreateSupplier_EmptyName_Returns422(t *testing.T) {
 	makeAdmin(t, "sup_val1")
 	adminToken := loginUser(t, "sup_val1", "SecurePass1!")
 
-	resp, err := authedClient(adminToken).PostForm(testServer.URL+"/suppliers", url.Values{
+	resp, err := authedClient(t,adminToken).PostForm(testServer.URL+"/suppliers", url.Values{
 		"name":    {""}, // empty — triggers ErrValidation
 		"contact": {"test@example.com"},
 	})

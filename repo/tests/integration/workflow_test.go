@@ -38,10 +38,10 @@ func TestWorkflow_AuthorLifecycle(t *testing.T) {
 	adminToken := loginUser(t, "wf_admin1", "Password@123456")
 	voterToken := loginUser(t, "wf_voter1", "Password@123456")
 
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
-	voterClient := authedClient(voterToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
+	voterClient := authedClient(t,voterToken)
 
 	// 1. Create draft
 	resourceID := createDraft(t, authorClient, "Author Lifecycle Resource", "A workflow test resource")
@@ -122,10 +122,10 @@ func TestWorkflow_ModerationFlow(t *testing.T) {
 	reviewerToken := loginUser(t, "wf_mod_reviewer", "Password@123456")
 	adminToken := loginUser(t, "wf_mod_admin", "Password@123456")
 
-	authorClient := authedClient(authorToken)
-	reporterClient := authedClient(reporterToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
+	authorClient := authedClient(t,authorToken)
+	reporterClient := authedClient(t,reporterToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
 
 	// Create and publish a resource
 	resourceID := createAndSubmitDraft(t, authorClient, "Controversial Resource", "Content")
@@ -195,8 +195,8 @@ func TestWorkflow_SupplierFlow(t *testing.T) {
 
 	adminToken := loginUser(t, "wf_sup_admin", "Password@123456")
 	supToken := loginUser(t, "wf_sup_user", "Password@123456")
-	adminClient := authedClient(adminToken)
-	supClient := authedClient(supToken)
+	adminClient := authedClient(t,adminToken)
+	supClient := authedClient(t,supToken)
 
 	// Create supplier
 	resp, err := adminClient.PostForm(testServer.URL+"/suppliers", url.Values{
@@ -306,11 +306,11 @@ func TestWorkflow_Search(t *testing.T) {
 	authorToken := loginUser(t, "wf_srch_author", "Password@123456")
 	reviewerToken := loginUser(t, "wf_srch_reviewer", "Password@123456")
 	adminToken := loginUser(t, "wf_srch_admin", "Password@123456")
-	authorClient := authedClient(authorToken)
+	authorClient := authedClient(t,authorToken)
 
 	// Create and publish a Chinese-title resource
 	resourceID := createAndSubmitDraft(t, authorClient, "数学教材", "Math textbook in Chinese")
-	approveAndPublish(t, authedClient(reviewerToken), authedClient(adminToken), resourceID)
+	approveAndPublish(t, authedClient(t,reviewerToken), authedClient(t,adminToken), resourceID)
 
 	// Seed pinyin content in search_index
 	_, err := testPool.Exec(context.Background(),
@@ -322,9 +322,7 @@ func TestWorkflow_Search(t *testing.T) {
 	// Search by pinyin
 	req, _ := http.NewRequest("GET", testServer.URL+"/search?q=shuxue", nil)
 	req.Header.Set("Accept", "application/json")
-	req.AddCookie(sessionCookie(authorToken))
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, authorToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -339,8 +337,7 @@ func TestWorkflow_Search(t *testing.T) {
 	// Search for synonym term
 	req2, _ := http.NewRequest("GET", testServer.URL+"/search?q=maths", nil)
 	req2.Header.Set("Accept", "application/json")
-	req2.AddCookie(sessionCookie(authorToken))
-	resp2, err := client.Do(req2)
+	resp2, err := authedClient(t, authorToken).Do(req2)
 	require.NoError(t, err)
 	defer resp2.Body.Close()
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
@@ -365,10 +362,10 @@ func TestWorkflow_Gamification(t *testing.T) {
 	voterToken := loginUser(t, "wf_gam_voter", "Password@123456")
 
 	authorID := getUserIDByUsername(t, "wf_gam_author")
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
-	voterClient := authedClient(voterToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
+	voterClient := authedClient(t,voterToken)
 
 	// Publish a resource to earn points
 	resourceID := createAndSubmitDraft(t, authorClient, "Gamification Test", "Testing points")
@@ -405,9 +402,7 @@ func TestWorkflow_Gamification(t *testing.T) {
 	// Verify badges endpoint works
 	req, _ := http.NewRequest("GET", testServer.URL+"/users/"+authorID.String()+"/badges", nil)
 	req.Header.Set("Accept", "application/json")
-	req.AddCookie(sessionCookie(authorToken))
-	client := &http.Client{}
-	resp2, err := client.Do(req)
+	resp2, err := authedClient(t, authorToken).Do(req)
 	require.NoError(t, err)
 	defer resp2.Body.Close()
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
@@ -429,9 +424,9 @@ func TestWorkflow_MessagingCenter(t *testing.T) {
 	reviewerToken := loginUser(t, "wf_msg_reviewer", "Password@123456")
 	adminToken := loginUser(t, "wf_msg_admin", "Password@123456")
 
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
 
 	authorID := getUserIDByUsername(t, "wf_msg_author")
 
@@ -454,9 +449,7 @@ func TestWorkflow_MessagingCenter(t *testing.T) {
 	// Verify unread via messaging center API
 	req, _ := http.NewRequest("GET", testServer.URL+"/messaging/notifications", nil)
 	req.Header.Set("Accept", "application/json")
-	req.AddCookie(sessionCookie(authorToken))
-	client := &http.Client{}
-	resp2, err := client.Do(req)
+	resp2, err := authedClient(t, authorToken).Do(req)
 	require.NoError(t, err)
 	defer resp2.Body.Close()
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
@@ -513,10 +506,10 @@ func TestWorkflow_Recommendations(t *testing.T) {
 	adminToken := loginUser(t, "wf_rec_admin", "Password@123456")
 	userToken := loginUser(t, "wf_rec_user", "Password@123456")
 
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
-	userClient := authedClient(userToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
+	userClient := authedClient(t,userToken)
 
 	// Create category
 	catResp, err := adminClient.PostForm(testServer.URL+"/categories", url.Values{
@@ -556,9 +549,7 @@ func TestWorkflow_Recommendations(t *testing.T) {
 	// Get recommendations
 	req, _ := http.NewRequest("GET", testServer.URL+"/recommendations", nil)
 	req.Header.Set("Accept", "application/json")
-	req.AddCookie(sessionCookie(userToken))
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, userToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -582,7 +573,7 @@ func TestWorkflow_BulkImport(t *testing.T) {
 	registerUser(t, "wf_imp_admin", "wf_imp_admin@test.com", "Password@123456")
 	makeAdmin(t, "wf_imp_admin")
 	adminToken := loginUser(t, "wf_imp_admin", "Password@123456")
-	adminClient := authedClient(adminToken)
+	adminClient := authedClient(t,adminToken)
 
 	// Build a valid CSV with 5 rows
 	var sb strings.Builder
@@ -595,11 +586,7 @@ func TestWorkflow_BulkImport(t *testing.T) {
 	body, contentType := multipartFile("file", "resources.csv", []byte(csvContent))
 	req, _ := http.NewRequest("POST", testServer.URL+"/import/upload", body)
 	req.Header.Set("Content-Type", contentType)
-	req.AddCookie(sessionCookie(adminToken))
-	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	// Should redirect to preview
@@ -627,8 +614,7 @@ func TestWorkflow_BulkImport(t *testing.T) {
 	body2, contentType2 := multipartFile("file", "invalid.csv", []byte(invalidCSV))
 	req3, _ := http.NewRequest("POST", testServer.URL+"/import/upload", body2)
 	req3.Header.Set("Content-Type", contentType2)
-	req3.AddCookie(sessionCookie(adminToken))
-	resp3, err := client.Do(req3)
+	resp3, err := authedClient(t, adminToken).Do(req3)
 	require.NoError(t, err)
 	defer resp3.Body.Close()
 	// Should still redirect to preview showing errors
@@ -650,9 +636,9 @@ func TestWorkflow_Permissions(t *testing.T) {
 	supplierToken := loginUser(t, "wf_perm_supplier", "Password@123456")
 	authorToken := loginUser(t, "wf_perm_author", "Password@123456")
 
-	regularClient := authedClient(regularToken)
-	supplierClient := authedClient(supplierToken)
-	authorClient := authedClient(authorToken)
+	regularClient := authedClient(t,regularToken)
+	supplierClient := authedClient(t,supplierToken)
+	authorClient := authedClient(t,authorToken)
 
 	// Regular user cannot access /admin
 	resp, err := regularClient.Get(testServer.URL + "/admin/users")
@@ -681,7 +667,7 @@ func TestWorkflow_RateLimit(t *testing.T) {
 	registerUser(t, "wf_rl_author", "wf_rl_author@test.com", "Password@123456")
 	makeAuthor(t, "wf_rl_author")
 	token := loginUser(t, "wf_rl_author", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	// Exhaust the rate limit (20 per hour)
 	for i := 0; i < 20; i++ {
@@ -771,7 +757,7 @@ func TestWorkflow_Idempotency_DoubleSubmit(t *testing.T) {
 	registerUser(t, "wf_idem_author", "wf_idem_author@test.com", "Password@123456")
 	makeAuthor(t, "wf_idem_author")
 	token := loginUser(t, "wf_idem_author", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	// Create a draft
 	resourceID := createDraft(t, client, "Idempotency Test", "Testing idempotency")
@@ -811,7 +797,7 @@ func TestWorkflow_OptimisticLock(t *testing.T) {
 	registerUser(t, "wf_lock_author", "wf_lock_author@test.com", "Password@123456")
 	makeAuthor(t, "wf_lock_author")
 	token := loginUser(t, "wf_lock_author", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	// Create draft
 	resourceID := createDraft(t, client, "Lock Test Resource", "Testing optimistic lock")
@@ -824,7 +810,6 @@ func TestWorkflow_OptimisticLock(t *testing.T) {
 		"version":     {fmt.Sprintf("%d", version)},
 	}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(sessionCookie(token))
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -837,7 +822,6 @@ func TestWorkflow_OptimisticLock(t *testing.T) {
 		"version":     {fmt.Sprintf("%d", version)}, // stale
 	}.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req2.AddCookie(sessionCookie(token))
 	resp2, err := client.Do(req2)
 	require.NoError(t, err)
 	resp2.Body.Close()
@@ -863,8 +847,8 @@ func TestWorkflow_NotificationSubscriptions(t *testing.T) {
 	adminToken := loginUser(t, "wf_sub_admin", "Password@123456")
 
 	authorID := getUserIDByUsername(t, "wf_sub_author")
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
 
 	// Author disables review_decision subscription
 	resp, err := authorClient.Do(func() *http.Request {
@@ -916,7 +900,7 @@ func TestWorkflow_NotificationSubscriptions(t *testing.T) {
 
 	// Publish to trigger publish_complete (should now send)
 	version = getResourceVersion(t, resourceID)
-	resp4, err := authedClient(adminToken).PostForm(testServer.URL+"/resources/"+resourceID+"/publish", url.Values{
+	resp4, err := authedClient(t,adminToken).PostForm(testServer.URL+"/resources/"+resourceID+"/publish", url.Values{
 		"version": {fmt.Sprintf("%d", version)},
 	})
 	require.NoError(t, err)

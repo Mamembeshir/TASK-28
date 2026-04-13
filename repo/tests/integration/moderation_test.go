@@ -21,8 +21,8 @@ import (
 // createModPublishedResource creates a published resource with a custom title for moderation tests.
 func createModPublishedResource(t *testing.T, authorToken, adminToken, title string) string {
 	t.Helper()
-	authorClient := authedClient(authorToken)
-	adminClient := authedClient(adminToken)
+	authorClient := authedClient(t,authorToken)
+	adminClient := authedClient(t,adminToken)
 
 	// Create draft - use content_body (not content) to match the handler
 	resp, err := authorClient.PostForm(testServer.URL+"/resources", url.Values{
@@ -89,7 +89,7 @@ func TestCreateReport_Success(t *testing.T) {
 
 	resourceID := createModPublishedResource(t, authorToken, adminToken, "Report Test Resource")
 
-	reporterClient := authedClient(reporterToken)
+	reporterClient := authedClient(t,reporterToken)
 	resp, err := reporterClient.PostForm(testServer.URL+"/reports", url.Values{
 		"resource_id": {resourceID},
 		"reason_type": {"SPAM"},
@@ -153,7 +153,7 @@ func TestAssignReport_Success(t *testing.T) {
 	resourceID := createModPublishedResource(t, authorToken, adminToken, "Assign Report Resource")
 
 	// Create a report
-	reporterClient := authedClient(reporterToken)
+	reporterClient := authedClient(t,reporterToken)
 	resp, err := reporterClient.PostForm(testServer.URL+"/reports", url.Values{
 		"resource_id": {resourceID},
 		"reason_type": {"INAPPROPRIATE"},
@@ -170,7 +170,7 @@ func TestAssignReport_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assign
-	reviewerClient := authedClient(reviewerToken)
+	reviewerClient := authedClient(t,reviewerToken)
 	resp, err = reviewerClient.PostForm(testServer.URL+"/moderation/reports/"+reportID+"/assign", url.Values{})
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -206,7 +206,7 @@ func TestResolveReport_WithTakedown(t *testing.T) {
 	resourceID := createModPublishedResource(t, authorToken, adminToken, "Resolve Report Resource")
 
 	// Create report
-	reporterClient := authedClient(reporterToken)
+	reporterClient := authedClient(t,reporterToken)
 	resp, err := reporterClient.PostForm(testServer.URL+"/reports", url.Values{
 		"resource_id": {resourceID},
 		"reason_type": {"COPYRIGHT"},
@@ -222,7 +222,7 @@ func TestResolveReport_WithTakedown(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assign
-	reviewerClient := authedClient(reviewerToken)
+	reviewerClient := authedClient(t,reviewerToken)
 	resp, err = reviewerClient.PostForm(testServer.URL+"/moderation/reports/"+reportID+"/assign", url.Values{})
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -281,7 +281,7 @@ func TestDismissReport_Success(t *testing.T) {
 	resourceID := createModPublishedResource(t, authorToken, adminToken, "Dismiss Report Resource")
 
 	// Create report
-	reporterClient := authedClient(reporterToken)
+	reporterClient := authedClient(t,reporterToken)
 	resp, err := reporterClient.PostForm(testServer.URL+"/reports", url.Values{
 		"resource_id": {resourceID},
 		"reason_type": {"OTHER"},
@@ -297,7 +297,7 @@ func TestDismissReport_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assign
-	reviewerClient := authedClient(reviewerToken)
+	reviewerClient := authedClient(t,reviewerToken)
 	resp, err = reviewerClient.PostForm(testServer.URL+"/moderation/reports/"+reportID+"/assign", url.Values{})
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -338,7 +338,7 @@ func TestBanUser_1Day_CanBrowseNotPost(t *testing.T) {
 	require.NoError(t, err)
 
 	// Admin bans target user for 1 day
-	adminClient := authedClient(adminToken)
+	adminClient := authedClient(t,adminToken)
 	resp, err := adminClient.PostForm(testServer.URL+"/moderation/users/"+targetUserID+"/ban", url.Values{
 		"ban_type": {"1_DAY"},
 		"reason":   {"Testing 1-day ban"},
@@ -347,7 +347,7 @@ func TestBanUser_1Day_CanBrowseNotPost(t *testing.T) {
 	resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	targetClient := authedClient(targetToken)
+	targetClient := authedClient(t,targetToken)
 
 	// GET /resources should work (200)
 	resp, err = targetClient.Get(testServer.URL + "/resources")
@@ -380,7 +380,7 @@ func TestBanUser_PermanentRequiresAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	reviewerToken := loginUser(t, "reviewer_pban", "SecurePass1!")
-	reviewerClient := authedClient(reviewerToken)
+	reviewerClient := authedClient(t,reviewerToken)
 
 	// Reviewer tries PERMANENT ban → 403 (route requires ADMIN)
 	resp, err := reviewerClient.PostForm(testServer.URL+"/moderation/users/"+targetUserID+"/ban", url.Values{
@@ -403,7 +403,7 @@ func TestRateLimit_21stPost_Returns429(t *testing.T) {
 	makeAdmin(t, "rl_admin")
 
 	authorToken := loginUser(t, "rl_author", "SecurePass1!")
-	authorClient := authedClient(authorToken)
+	authorClient := authedClient(t,authorToken)
 
 	// First 20 posts should succeed (get redirected, not 429)
 	for i := 1; i <= 20; i++ {
@@ -590,7 +590,7 @@ func TestBanUser_InvalidBanType_Returns422(t *testing.T) {
 		`SELECT id FROM users WHERE username = 'mod_val_target'`).Scan(&targetID)
 	require.NoError(t, err)
 
-	resp, err := authedClient(adminToken).PostForm(
+	resp, err := authedClient(t,adminToken).PostForm(
 		testServer.URL+"/moderation/users/"+targetID+"/ban",
 		url.Values{
 			"ban_type": {"INVALID_TYPE"}, // triggers ErrValidation

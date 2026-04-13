@@ -16,7 +16,7 @@ func TestGetAnalyticsDashboard_AsAdmin(t *testing.T) {
 	registerUser(t, "analyticsadmin1", "analyticsadmin1@test.com", "Password@123456")
 	makeAdmin(t, "analyticsadmin1")
 	token := loginUser(t, "analyticsadmin1", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	req, _ := http.NewRequest("GET", testServer.URL+"/analytics/dashboard", nil)
 	req.Header.Set("Accept", "application/json")
@@ -35,7 +35,7 @@ func TestGetAnalyticsDashboard_AsRegularUser(t *testing.T) {
 	truncate(t)
 	registerUser(t, "analyticsuser1", "analyticsuser1@test.com", "Password@123456")
 	token := loginUser(t, "analyticsuser1", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	req, _ := http.NewRequest("GET", testServer.URL+"/analytics/dashboard", nil)
 	req.Header.Set("Accept", "application/json")
@@ -51,7 +51,7 @@ func TestGetReportList_RequiresAdmin(t *testing.T) {
 	truncate(t)
 	registerUser(t, "analyticsuser2", "analyticsuser2@test.com", "Password@123456")
 	token := loginUser(t, "analyticsuser2", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	resp, err := client.Get(testServer.URL + "/analytics/reports")
 	require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestPostGenerateReport_AsAdmin(t *testing.T) {
 	userID := getUserIDByUsername(t, "analyticsadmin2")
 	_ = userID
 
-	client := authedClient(token)
+	client := authedClient(t,token)
 	body := strings.NewReader("report_type=ANALYTICS")
 	req, _ := http.NewRequest("POST", testServer.URL+"/analytics/reports/generate", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -95,7 +95,7 @@ func TestGetAuditLogs_AdminOnly(t *testing.T) {
 	// Register non-admin
 	registerUser(t, "audituser1", "audituser1@test.com", "Password@123456")
 	token := loginUser(t, "audituser1", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	resp, err := client.Get(testServer.URL + "/audit-logs")
 	require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestGetAuditLogs_AdminCanAccess(t *testing.T) {
 	registerUser(t, "auditadmin1", "auditadmin1@test.com", "Password@123456")
 	makeAdmin(t, "auditadmin1")
 	token := loginUser(t, "auditadmin1", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	req, _ := http.NewRequest("GET", testServer.URL+"/audit-logs", nil)
 	req.Header.Set("Accept", "application/json")
@@ -129,7 +129,7 @@ func TestExportAuditLog_AdminOnly(t *testing.T) {
 	registerUser(t, "auditadmin2", "auditadmin2@test.com", "Password@123456")
 	makeAdmin(t, "auditadmin2")
 	token := loginUser(t, "auditadmin2", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	resp, err := client.Post(testServer.URL+"/audit-logs/export", "application/json", nil)
 	require.NoError(t, err)

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/eduexchange/eduexchange/internal/app"
 	"github.com/eduexchange/eduexchange/internal/audit"
+	appcron "github.com/eduexchange/eduexchange/internal/cron"
 	"github.com/eduexchange/eduexchange/internal/config"
 	appcrypto "github.com/eduexchange/eduexchange/internal/crypto"
 	supplierrepo "github.com/eduexchange/eduexchange/internal/repository/supplier"
@@ -78,13 +80,20 @@ func main() {
 		loc = time.UTC
 	}
 
-	r, scheduler := app.NewRouter(pool, []byte(cfg.EncryptionKey), app.AppDirs{
+	dirs := app.AppDirs{
 		Uploads:    cfg.UploadPath,
 		Imports:    cfg.UploadPath + "/imports",
 		Exports:    cfg.ExportPath,
 		Reports:    cfg.ExportPath + "/reports",
 		Statements: cfg.StatementPath,
-	}, loc)
+	}
+	var r *gin.Engine
+	var scheduler *appcron.Scheduler
+	if cfg.SecureCookies {
+		r, scheduler = app.NewRouterSecure(pool, []byte(cfg.EncryptionKey), dirs, loc)
+	} else {
+		r, scheduler = app.NewRouter(pool, []byte(cfg.EncryptionKey), dirs, loc)
+	}
 	r.Static("/static", "./static")
 	scheduler.Start()
 

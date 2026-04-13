@@ -130,9 +130,9 @@ func (s *Scheduler) likeRingDetection() {
 	ctx := context.Background()
 	log.Println("cron: running LikeRingDetection")
 
-	// Query for reciprocal pairs: both A→B and B→A voted in last 24h,
-	// each direction having count > 15.  This avoids false positives from
-	// one-way bulk voting.
+	// Query for reciprocal upvote pairs: both A→B and B→A cast >15 upvotes in
+	// the last 24h.  Only UP votes are counted (MOD-02 targets coordinated
+	// upvote inflation, not downvotes).  One-way bulk voting is not flagged.
 	rows, err := s.pool.Query(ctx, `
 		WITH directional AS (
 			SELECT v.user_id AS voter, r.author_id AS author, COUNT(*) AS cnt
@@ -140,6 +140,7 @@ func (s *Scheduler) likeRingDetection() {
 			JOIN resources r ON r.id = v.resource_id
 			WHERE v.updated_at >= NOW() - INTERVAL '24 hours'
 			  AND v.user_id != r.author_id
+			  AND v.vote_type = 'UP'
 			GROUP BY v.user_id, r.author_id
 			HAVING COUNT(*) > 15
 		)
@@ -232,7 +233,7 @@ func (s *Scheduler) deliveryConfirmationEscalation() {
 		return
 	}
 
-	// Flag orders in CREATED status older than 48h (standard deadline)
+	// All tiers share the universal 48h confirmation window (SLA).
 	deadline := time.Now().UTC().Add(-48 * time.Hour)
 	orders, err := s.supplierRepo.GetOrdersAwaitingConfirmation(ctx, deadline)
 	if err != nil {
@@ -240,23 +241,73 @@ func (s *Scheduler) deliveryConfirmationEscalation() {
 		return
 	}
 
-	for _, order := range orders {
-		log.Printf("cron: DeliveryConfirmationEscalation: order %s needs escalation", order.ID)
-		flag := &model.AnomalyFlag{
-			ID:       uuid.New(),
-			FlagType: "OTHER",
-			UserIDs:  []uuid.UUID{},
-			EvidenceJSON: map[string]interface{}{
-				"type":         "delivery_confirmation_overdue",
-				"order_id":     order.ID.String(),
-				"order_number": order.OrderNumber,
-				"supplier_id":  order.SupplierID.String(),
-				"created_at":   order.CreatedAt.Format(time.RFC3339),
-			},
-			Status: "OPEN",
+	// Group late orders by supplier so we can apply tier-specific thresholds.
+	// EscalationThreshold: Gold=2 (2 prior misses allowed), Silver=1, Bronze=0 (immediate).
+	bySupplier := make(map[uuid.UUID][]model.SupplierOrder)
+	for _, o := range orders {
+		bySupplier[o.SupplierID] = append(bySupplier[o.SupplierID], o)
+	}
+
+	for supplierID, supplierOrders := range bySupplier {
+		// Fetch supplier to get their tier.
+		supplier, err := s.supplierRepo.GetSupplier(ctx, supplierID)
+		if err != nil {
+			log.Printf("cron: DeliveryConfirmationEscalation: cannot fetch supplier %s: %v", supplierID, err)
+			continue
 		}
-		if err := s.engRepo.CreateAnomalyFlag(ctx, flag); err != nil {
-			log.Printf("cron: DeliveryConfirmationEscalation flag error: %v", err)
+
+		benefits := supplierservice.GetTierBenefits(supplier.Tier)
+		threshold := benefits.EscalationThreshold
+
+		// Count how many delivery-confirmation escalation flags already exist for
+		// this supplier.  Each past unflagged miss increments the "grace counter".
+		var existingCount int
+		_ = s.pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM anomaly_flags
+			WHERE flag_type = 'OTHER'
+			  AND evidence_json->>'type' = 'delivery_confirmation_overdue'
+			  AND evidence_json->>'supplier_id' = $1`,
+			supplierID.String()).Scan(&existingCount)
+
+		if existingCount < threshold {
+			// Supplier is within their tier-specific grace period; skip escalation.
+			log.Printf("cron: DeliveryConfirmationEscalation: supplier %s (%s) within grace: %d/%d prior flags",
+				supplier.Name, supplier.Tier, existingCount, threshold)
+			continue
+		}
+
+		// Escalate each late order that has not been flagged yet.
+		for _, order := range supplierOrders {
+			// Avoid duplicate flags for the same order.
+			var dupCount int
+			_ = s.pool.QueryRow(ctx, `
+				SELECT COUNT(*) FROM anomaly_flags
+				WHERE flag_type = 'OTHER'
+				  AND evidence_json->>'order_id' = $1`,
+				order.ID.String()).Scan(&dupCount)
+			if dupCount > 0 {
+				continue
+			}
+
+			log.Printf("cron: DeliveryConfirmationEscalation: escalating order %s (supplier %s, tier %s)",
+				order.ID, supplier.Name, supplier.Tier)
+			flag := &model.AnomalyFlag{
+				ID:       uuid.New(),
+				FlagType: "OTHER",
+				UserIDs:  []uuid.UUID{},
+				EvidenceJSON: map[string]interface{}{
+					"type":         "delivery_confirmation_overdue",
+					"order_id":     order.ID.String(),
+					"order_number": order.OrderNumber,
+					"supplier_id":  order.SupplierID.String(),
+					"supplier_tier": supplier.Tier.String(),
+					"created_at":   order.CreatedAt.Format(time.RFC3339),
+				},
+				Status: "OPEN",
+			}
+			if err := s.engRepo.CreateAnomalyFlag(ctx, flag); err != nil {
+				log.Printf("cron: DeliveryConfirmationEscalation flag error: %v", err)
+			}
 		}
 	}
 }

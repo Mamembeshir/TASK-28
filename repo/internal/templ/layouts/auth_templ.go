@@ -50,7 +50,7 @@ func Auth(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</div></div></body></html>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString("</div></div><script>\n\t\t\t\t// ── CSRF protection ──────────────────────────────────────────\n\t\t\t\tfunction getCsrfToken() {\n\t\t\t\t\tvar m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);\n\t\t\t\t\treturn m ? decodeURIComponent(m[1]) : '';\n\t\t\t\t}\n\t\t\t\tdocument.body.addEventListener('htmx:configRequest', function(evt) {\n\t\t\t\t\tvar token = getCsrfToken();\n\t\t\t\t\tif (token) { evt.detail.headers['X-CSRF-Token'] = token; }\n\t\t\t\t});\n\t\t\t\tdocument.addEventListener('submit', function(evt) {\n\t\t\t\t\tvar form = evt.target;\n\t\t\t\t\tif (form && form.method && form.method.toLowerCase() !== 'get') {\n\t\t\t\t\t\tif (!form.querySelector('input[name=\"_csrf\"]')) {\n\t\t\t\t\t\t\tvar inp = document.createElement('input');\n\t\t\t\t\t\t\tinp.type = 'hidden'; inp.name = '_csrf'; inp.value = getCsrfToken();\n\t\t\t\t\t\t\tform.appendChild(inp);\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}, true);\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

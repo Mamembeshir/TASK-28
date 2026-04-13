@@ -14,11 +14,17 @@ import (
 
 // Handler serves the auth routes: GET /login, GET /register, POST /login, POST /register, POST /logout.
 type Handler struct {
-	authSvc *authservice.AuthService
+	authSvc       *authservice.AuthService
+	secureCookies bool
 }
 
 func New(authSvc *authservice.AuthService) *Handler {
 	return &Handler{authSvc: authSvc}
+}
+
+// NewSecure creates a Handler with the Secure flag enabled on session cookies.
+func NewSecure(authSvc *authservice.AuthService) *Handler {
+	return &Handler{authSvc: authSvc, secureCookies: true}
 }
 
 // GetLogin renders the login page.
@@ -68,6 +74,7 @@ func (h *Handler) PostLogin(c *gin.Context) {
 		Value:    result.Token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   h.secureCookies,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   86400, // 24h
 	})

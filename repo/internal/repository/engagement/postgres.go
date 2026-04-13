@@ -85,10 +85,12 @@ func (r *postgresRepo) GetMutualVoteCount(ctx context.Context, userA, userB uuid
 			SELECT v.id FROM votes v
 			JOIN resources r ON r.id = v.resource_id
 			WHERE v.user_id = $1 AND r.author_id = $2 AND v.updated_at >= $3
+			  AND v.vote_type = 'UP'
 			UNION ALL
 			SELECT v.id FROM votes v
 			JOIN resources r ON r.id = v.resource_id
 			WHERE v.user_id = $2 AND r.author_id = $1 AND v.updated_at >= $3
+			  AND v.vote_type = 'UP'
 		) mutual`,
 		userA, userB, cutoff).Scan(&count)
 	return count, err
@@ -321,4 +323,17 @@ func (r *postgresRepo) UpdateAnomalyFlag(ctx context.Context, flagID uuid.UUID, 
 		UPDATE anomaly_flags SET status=$2, updated_at=NOW()
 		WHERE id=$1`, flagID, status)
 	return err
+}
+
+// HasOpenLikeRingFlag returns true when there is already an OPEN LIKE_RING
+// anomaly flag whose user_ids array contains both userA and userB.
+func (r *postgresRepo) HasOpenLikeRingFlag(ctx context.Context, userA, userB uuid.UUID) (bool, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM anomaly_flags
+		WHERE flag_type = 'LIKE_RING'
+		  AND status = 'OPEN'
+		  AND user_ids @> ARRAY[$1::uuid, $2::uuid]`,
+		userA, userB).Scan(&count)
+	return count > 0, err
 }

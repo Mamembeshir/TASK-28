@@ -50,4 +50,7 @@ type EngagementRepository interface {
 	CreateAnomalyFlag(ctx context.Context, flag *model.AnomalyFlag) error
 	ListAnomalyFlags(ctx context.Context, status string) ([]model.AnomalyFlag, error)
 	UpdateAnomalyFlag(ctx context.Context, flagID uuid.UUID, status string) error
+	// HasOpenLikeRingFlag returns true when there is already an OPEN LIKE_RING
+	// anomaly flag that names both userA and userB as involved parties.
+	HasOpenLikeRingFlag(ctx context.Context, userA, userB uuid.UUID) (bool, error)
 }

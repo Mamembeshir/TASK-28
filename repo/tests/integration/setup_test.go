@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -186,23 +187,69 @@ func sessionCookie(token string) *http.Cookie {
 	return &http.Cookie{Name: "session_token", Value: token}
 }
 
-// authedClient returns an http.Client that always sends the given session cookie.
-func authedClient(token string) *http.Client {
-	jar := &singleCookieJar{cookie: sessionCookie(token)}
-	return &http.Client{
-		Jar: jar,
+// ── CSRF-aware HTTP clients ──────────────────────────────────────────────────
+
+// csrfTransport wraps http.DefaultTransport and automatically injects the
+// X-CSRF-Token header on mutating requests by reading the csrf_token cookie
+// from the client's cookie jar.
+type csrfTransport struct {
+	jar http.CookieJar
+}
+
+func (ct *csrfTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	switch req.Method {
+	case http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+		for _, c := range ct.jar.Cookies(req.URL) {
+			if c.Name == "csrf_token" {
+				req.Header.Set("X-CSRF-Token", c.Value)
+				break
+			}
+		}
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// newCSRFClient creates an *http.Client backed by a real cookie jar and a
+// csrfTransport.  It seeds the CSRF cookie by performing a GET to /health.
+// Any initial cookies (e.g. session_token) can be passed in.
+func newCSRFClient(t *testing.T, cookies ...*http.Cookie) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+
+	u, err := url.Parse(testServer.URL)
+	require.NoError(t, err)
+	if len(cookies) > 0 {
+		jar.SetCookies(u, cookies)
+	}
+
+	client := &http.Client{
+		Jar:       jar,
+		Transport: &csrfTransport{jar: jar},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
+
+	// Seed the CSRF cookie — /health always returns 200 and goes through
+	// the CSRF middleware which sets the cookie on every response.
+	resp, err := client.Get(testServer.URL + "/health")
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	return client
 }
 
-// singleCookieJar is a minimal cookie jar that always sends one cookie.
-type singleCookieJar struct {
-	cookie *http.Cookie
+// authedClient returns an http.Client that sends the session cookie and
+// automatically handles CSRF tokens (double-submit via cookie + header).
+func authedClient(t *testing.T, token string) *http.Client {
+	t.Helper()
+	return newCSRFClient(t, sessionCookie(token))
 }
 
-func (j *singleCookieJar) SetCookies(_ *url.URL, _ []*http.Cookie) {}
-func (j *singleCookieJar) Cookies(_ *url.URL) []*http.Cookie {
-	return []*http.Cookie{j.cookie}
+// publicClient returns an http.Client with CSRF support but no session cookie.
+// Use for unauthenticated endpoints like /login and /register.
+func publicClient(t *testing.T) *http.Client {
+	t.Helper()
+	return newCSRFClient(t)
 }

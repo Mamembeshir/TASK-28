@@ -17,7 +17,7 @@ import (
 func TestRegister_Success(t *testing.T) {
 	truncate(t)
 
-	resp, err := http.PostForm(testServer.URL+"/register", url.Values{
+	resp, err := publicClient(t).PostForm(testServer.URL+"/register", url.Values{
 		"username": {"newuser"},
 		"email":    {"newuser@example.com"},
 		"password": {"SecurePass1!"},
@@ -34,7 +34,7 @@ func TestRegister_DuplicateUsername(t *testing.T) {
 	truncate(t)
 	registerUser(t, "dupuser", "dup@example.com", "SecurePass1!")
 
-	resp, err := http.PostForm(testServer.URL+"/register", url.Values{
+	resp, err := publicClient(t).PostForm(testServer.URL+"/register", url.Values{
 		"username": {"dupuser"},
 		"email":    {"other@example.com"},
 		"password": {"SecurePass1!"},
@@ -48,7 +48,7 @@ func TestRegister_DuplicateUsername(t *testing.T) {
 func TestRegister_WeakPassword(t *testing.T) {
 	truncate(t)
 
-	resp, err := http.PostForm(testServer.URL+"/register", url.Values{
+	resp, err := publicClient(t).PostForm(testServer.URL+"/register", url.Values{
 		"username": {"weakpwuser"},
 		"email":    {"weak@example.com"},
 		"password": {"short"},
@@ -62,7 +62,7 @@ func TestRegister_WeakPassword(t *testing.T) {
 func TestRegister_InvalidEmail(t *testing.T) {
 	truncate(t)
 
-	resp, err := http.PostForm(testServer.URL+"/register", url.Values{
+	resp, err := publicClient(t).PostForm(testServer.URL+"/register", url.Values{
 		"username": {"someuser"},
 		"email":    {"notanemail"},
 		"password": {"SecurePass1!"},
@@ -79,9 +79,7 @@ func TestLogin_Success(t *testing.T) {
 	truncate(t)
 	registerUser(t, "loginuser", "login@example.com", "SecurePass1!")
 
-	client := &http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse // don't follow redirects
-	}}
+	client := publicClient(t)
 
 	resp, err := client.PostForm(testServer.URL+"/login", url.Values{
 		"username": {"loginuser"},
@@ -95,22 +93,22 @@ func TestLogin_Success(t *testing.T) {
 		"expected 302 or 200, got %d", resp.StatusCode)
 
 	// Cookie must be set
-	var sessionCookie *http.Cookie
+	var sessionCookieVal *http.Cookie
 	for _, c := range resp.Cookies() {
 		if c.Name == "session_token" {
-			sessionCookie = c
+			sessionCookieVal = c
 			break
 		}
 	}
-	assert.NotNil(t, sessionCookie, "session_token cookie should be set")
-	assert.NotEmpty(t, sessionCookie.Value)
+	assert.NotNil(t, sessionCookieVal, "session_token cookie should be set")
+	assert.NotEmpty(t, sessionCookieVal.Value)
 }
 
 func TestLogin_WrongPassword(t *testing.T) {
 	truncate(t)
 	registerUser(t, "loginuser2", "login2@example.com", "SecurePass1!")
 
-	resp, err := http.PostForm(testServer.URL+"/login", url.Values{
+	resp, err := publicClient(t).PostForm(testServer.URL+"/login", url.Values{
 		"username": {"loginuser2"},
 		"password": {"WrongPassword1!"},
 	})
@@ -123,7 +121,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 func TestLogin_NonExistentUser(t *testing.T) {
 	truncate(t)
 
-	resp, err := http.PostForm(testServer.URL+"/login", url.Values{
+	resp, err := publicClient(t).PostForm(testServer.URL+"/login", url.Values{
 		"username": {"ghostuser"},
 		"password": {"SecurePass1!"},
 	})
@@ -139,9 +137,11 @@ func TestLogin_Lockout_After5Failures(t *testing.T) {
 	truncate(t)
 	registerUser(t, "lockoutuser", "lockout@example.com", "SecurePass1!")
 
+	client := publicClient(t)
+
 	// 5 bad attempts
 	for i := 0; i < 5; i++ {
-		resp, err := http.PostForm(testServer.URL+"/login", url.Values{
+		resp, err := client.PostForm(testServer.URL+"/login", url.Values{
 			"username": {"lockoutuser"},
 			"password": {"WrongPass1!"},
 		})
@@ -150,7 +150,7 @@ func TestLogin_Lockout_After5Failures(t *testing.T) {
 	}
 
 	// Correct password should now be rejected because of lockout
-	resp, err := http.PostForm(testServer.URL+"/login", url.Values{
+	resp, err := client.PostForm(testServer.URL+"/login", url.Values{
 		"username": {"lockoutuser"},
 		"password": {"SecurePass1!"},
 	})
@@ -167,10 +167,7 @@ func TestAdminListUsers_RequiresAdmin(t *testing.T) {
 	registerUser(t, "regularuser", "regular@example.com", "SecurePass1!")
 	token := loginUser(t, "regularuser", "SecurePass1!")
 
-	req, _ := http.NewRequest(http.MethodGet, testServer.URL+"/admin/users", nil)
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := authedClient(t, token).Get(testServer.URL + "/admin/users")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -183,10 +180,7 @@ func TestAdminListUsers_AdminCanAccess(t *testing.T) {
 	makeAdmin(t, "adminuser")
 	token := loginUser(t, "adminuser", "SecurePass1!")
 
-	req, _ := http.NewRequest(http.MethodGet, testServer.URL+"/admin/users", nil)
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := authedClient(t, token).Get(testServer.URL + "/admin/users")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -214,14 +208,14 @@ func TestAdminStatusTransition_ActiveToSuspended(t *testing.T) {
 		`SELECT version FROM users WHERE id = $1`, targetID).Scan(&version)
 	require.NoError(t, err)
 
+	client := authedClient(t, adminToken)
 	req, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("%s/admin/users/%s/status", testServer.URL, targetID),
 		strings.NewReader(fmt.Sprintf("status=SUSPENDED&version=%d", version)),
 	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -259,14 +253,14 @@ func TestAdminStatusTransition_InvalidTransition_Rejected(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try DEACTIVATED → ACTIVE (not allowed)
+	client := authedClient(t, adminToken)
 	req, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("%s/admin/users/%s/status", testServer.URL, targetID),
 		strings.NewReader(fmt.Sprintf("status=ACTIVE&version=%d", version)),
 	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -288,14 +282,14 @@ func TestAdminAssignRole(t *testing.T) {
 		`SELECT id FROM users WHERE username = 'targetuser'`).Scan(&targetID)
 	require.NoError(t, err)
 
+	client := authedClient(t, adminToken)
 	req, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("%s/admin/users/%s/roles/assign", testServer.URL, targetID),
 		strings.NewReader("role=AUTHOR"),
 	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -323,14 +317,14 @@ func TestAdminRemoveRole_LastRole_Rejected(t *testing.T) {
 	require.NoError(t, err)
 
 	// targetuser has only REGULAR_USER — try to remove it
+	client := authedClient(t, adminToken)
 	req, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("%s/admin/users/%s/roles/remove", testServer.URL, targetID),
 		strings.NewReader("role=REGULAR_USER"),
 	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -353,14 +347,14 @@ func TestAdminStatusTransition_StaleVersion_Rejected(t *testing.T) {
 	require.NoError(t, err)
 
 	// Send stale version (0 instead of actual 1)
+	client := authedClient(t, adminToken)
 	req, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("%s/admin/users/%s/status", testServer.URL, targetID),
 		strings.NewReader("status=SUSPENDED&version=0"),
 	)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: "session_token", Value: adminToken})
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 

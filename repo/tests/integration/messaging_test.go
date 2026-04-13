@@ -44,7 +44,7 @@ func TestGetMessagingCenter_Authenticated(t *testing.T) {
 	truncate(t)
 	registerUser(t, "msguser1", "msguser1@test.com", "Password@123456")
 	token := loginUser(t, "msguser1", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	resp, err := client.Get(testServer.URL + "/messaging")
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestGetNotifications_Empty(t *testing.T) {
 	truncate(t)
 	registerUser(t, "notifuser1", "notifuser1@test.com", "Password@123456")
 	token := loginUser(t, "notifuser1", "Password@123456")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	req, _ := http.NewRequest("GET", testServer.URL+"/messaging/notifications", nil)
 	req.Header.Set("Accept", "application/json")
@@ -94,7 +94,7 @@ func TestGetNotifications_ReturnsUserNotifications(t *testing.T) {
 	insertNotification(t, userID, "badge_earned", "Badge Earned", "You earned a badge!")
 	insertNotification(t, userID, "level_up", "Level Up!", "You reached level 2")
 
-	client := authedClient(token)
+	client := authedClient(t,token)
 	req, _ := http.NewRequest("GET", testServer.URL+"/messaging/notifications", nil)
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
@@ -117,7 +117,7 @@ func TestPostMarkRead_Success(t *testing.T) {
 
 	notifID := insertNotification(t, userID, "badge_earned", "Test Badge", "Test body")
 
-	client := authedClient(token)
+	client := authedClient(t,token)
 	resp, err := client.Post(
 		fmt.Sprintf("%s/messaging/notifications/%s/read", testServer.URL, notifID),
 		"application/json",
@@ -145,7 +145,7 @@ func TestPostMarkAllRead_Success(t *testing.T) {
 	insertNotification(t, userID, "badge_earned", "Badge 1", "Body 1")
 	insertNotification(t, userID, "level_up", "Level Up", "Body 2")
 
-	client := authedClient(token)
+	client := authedClient(t,token)
 	resp, err := client.Post(testServer.URL+"/messaging/notifications/read-all", "application/json", nil)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -165,7 +165,7 @@ func TestGetSubscriptions_DefaultsAllEnabled(t *testing.T) {
 	registerUser(t, "subuser1", "subuser1@test.com", "Password@123456")
 	token := loginUser(t, "subuser1", "Password@123456")
 
-	client := authedClient(token)
+	client := authedClient(t,token)
 	req, _ := http.NewRequest("GET", testServer.URL+"/messaging/subscriptions", nil)
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
@@ -181,7 +181,7 @@ func TestPutSubscriptions_DisableEventType(t *testing.T) {
 	token := loginUser(t, "subuser2", "Password@123456")
 	userID := getUserIDByUsername(t, "subuser2")
 
-	client := authedClient(token)
+	client := authedClient(t,token)
 	body := strings.NewReader("event_type=badge_earned&enabled=false")
 	req, _ := http.NewRequest("PUT", testServer.URL+"/messaging/subscriptions", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -213,7 +213,7 @@ func TestNotification_SkippedWhenSubscriptionDisabled(t *testing.T) {
 	require.NoError(t, err)
 
 	// Disable the subscription via API
-	client := authedClient(token)
+	client := authedClient(t,token)
 	body := strings.NewReader("event_type=badge_earned&enabled=false")
 	req, _ := http.NewRequest("PUT", testServer.URL+"/messaging/subscriptions", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -236,7 +236,7 @@ func TestSSEStream_Returns200WithEventStream(t *testing.T) {
 	registerUser(t, "sseuser1", "sseuser1@test.com", "Password@123456")
 	token := loginUser(t, "sseuser1", "Password@123456")
 
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	// Make SSE request with a timeout context so it terminates
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -387,10 +387,11 @@ func TestRetryQueue_BackoffScheduleValues(t *testing.T) {
 	// Expected backoff intervals indexed by attempt number (after increment):
 	// attempts 1 → 2 min, 2 → 4 min, 3 → 8 min, 4 → 15 min
 	expectedBackoffs := []time.Duration{
-		1 * time.Minute, // retryIntervals[0] (not reachable in this path)
-		2 * time.Minute, // retryIntervals[1]
-		4 * time.Minute, // retryIntervals[2]
-		8 * time.Minute, // retryIntervals[3]
+		1 * time.Minute,  // retryIntervals[0] (not reachable in this path)
+		2 * time.Minute,  // retryIntervals[1]
+		4 * time.Minute,  // retryIntervals[2]
+		8 * time.Minute,  // retryIntervals[3]
+		15 * time.Minute, // retryIntervals[4]
 	}
 
 	// Drop FK on retry queue so we can set a fake user_id that causes

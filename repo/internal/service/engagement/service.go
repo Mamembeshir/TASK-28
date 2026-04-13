@@ -61,6 +61,18 @@ func (s *EngagementService) CastVote(ctx context.Context, actorID, resourceID uu
 		return nil, ve
 	}
 
+	// MOD-02 gate: if there is an open LIKE_RING flag involving this voter and
+	// the resource author, suspend their mutual voting until moderation resolves
+	// the flag.
+	if voteType == model.VoteTypeUp {
+		flagged, err := s.repo.HasOpenLikeRingFlag(ctx, actorID, res.AuthorID)
+		if err == nil && flagged {
+			ve := model.NewValidationErrors()
+			ve.Add("vote", "Your voting privileges with this author are temporarily suspended pending moderation review.")
+			return nil, ve
+		}
+	}
+
 	// Get old vote to determine points delta.
 	oldVote, _ := s.repo.GetVote(ctx, actorID, resourceID)
 

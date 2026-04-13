@@ -26,7 +26,7 @@ func TestGetUserPoints_ZeroForNewUser(t *testing.T) {
 	require.NoError(t, testPool.QueryRow(context.Background(),
 		`SELECT id FROM users WHERE username=$1`, "gam_user1").Scan(&userID))
 
-	resp, err := authedClient(token).Get(testServer.URL + "/users/" + userID + "/points")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/users/" + userID + "/points")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -56,7 +56,7 @@ func TestGetUserPoints_PointsAwardedOnVoteReceived(t *testing.T) {
 	resourceID := createPublishedResource(t, authorToken, adminToken)
 
 	// Vote on author's resource
-	resp, err := authedClient(voterToken).Post(
+	resp, err := authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"UP"}`),
@@ -69,7 +69,7 @@ func TestGetUserPoints_PointsAwardedOnVoteReceived(t *testing.T) {
 	require.NoError(t, testPool.QueryRow(context.Background(),
 		`SELECT id FROM users WHERE username=$1`, "gam_author2").Scan(&authorID))
 
-	resp, err = authedClient(authorToken).Get(testServer.URL + "/users/" + authorID + "/points")
+	resp, err = authedClient(t,authorToken).Get(testServer.URL + "/users/" + authorID + "/points")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -90,7 +90,7 @@ func TestGetLeaderboard_EmptyWhenNoPoints(t *testing.T) {
 	registerUser(t, "gam_lb1", "gam_lb1@test.com", "Passw0rd!secure")
 	token := loginUser(t, "gam_lb1", "Passw0rd!secure")
 
-	resp, err := authedClient(token).Get(testServer.URL + "/leaderboard")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/leaderboard")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -125,7 +125,7 @@ func TestGetLeaderboard_OrderByPoints(t *testing.T) {
 		VALUES ($1, 300, 1, NOW()), ($2, 100, 0, NOW())`, uidA, uidB)
 	require.NoError(t, err)
 
-	resp, err := authedClient(token).Get(testServer.URL + "/leaderboard")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/leaderboard")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -157,7 +157,7 @@ func TestGetUserBadges_EmptyForNewUser(t *testing.T) {
 	require.NoError(t, testPool.QueryRow(context.Background(),
 		`SELECT id FROM users WHERE username=$1`, "gam_badge1").Scan(&userID))
 
-	resp, err := authedClient(token).Get(testServer.URL + "/users/" + userID + "/badges")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/users/" + userID + "/badges")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -184,7 +184,7 @@ func TestAdminGetPointRules_ReturnsRules(t *testing.T) {
 		ON CONFLICT (event_type) DO NOTHING`)
 	require.NoError(t, err)
 
-	resp, err := authedClient(adminToken).Get(testServer.URL + "/point-rules")
+	resp, err := authedClient(t,adminToken).Get(testServer.URL + "/point-rules")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -201,7 +201,7 @@ func TestAdminGetPointRules_RequiresAdmin(t *testing.T) {
 	registerUser(t, "gam_nonadmin", "gam_nonadmin@test.com", "Passw0rd!secure")
 	token := loginUser(t, "gam_nonadmin", "Passw0rd!secure")
 
-	resp, err := authedClient(token).Get(testServer.URL + "/point-rules")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/point-rules")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
@@ -231,12 +231,8 @@ func TestAdminUpdatePointRule_UpdatesPoints(t *testing.T) {
 		strings.NewReader(`points=99&description=updated+desc&is_active=true`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(sessionCookie(adminToken))
 
-	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	resp, err := client.Do(req)
+	resp, err := authedClient(t, adminToken).Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -272,7 +268,7 @@ func TestComputeLevel_FloorAtZero(t *testing.T) {
 		VALUES ($1, -50, 0, NOW())`, uid)
 	require.NoError(t, err)
 
-	resp, err := authedClient(token).Get(testServer.URL + "/users/" + userID + "/points")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/users/" + userID + "/points")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 

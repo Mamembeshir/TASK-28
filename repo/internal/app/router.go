@@ -57,8 +57,19 @@ type AppDirs struct {
 // Call scheduler.Start() to activate background jobs; tests skip this.
 // loc sets the timezone used for cron scheduling (nil → UTC).
 func NewRouter(pool *pgxpool.Pool, encryptionKey []byte, dirs AppDirs, loc *time.Location) (*gin.Engine, *appcron.Scheduler) {
+	return newRouter(pool, encryptionKey, dirs, loc, false)
+}
+
+// NewRouterSecure is identical to NewRouter but sets the Secure flag on all
+// cookies (CSRF, session).  Use this in production behind TLS.
+func NewRouterSecure(pool *pgxpool.Pool, encryptionKey []byte, dirs AppDirs, loc *time.Location) (*gin.Engine, *appcron.Scheduler) {
+	return newRouter(pool, encryptionKey, dirs, loc, true)
+}
+
+func newRouter(pool *pgxpool.Pool, encryptionKey []byte, dirs AppDirs, loc *time.Location, secureCookies bool) (*gin.Engine, *appcron.Scheduler) {
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.CSRFMiddleware(secureCookies))
 
 	auditSvc := audit.NewService(pool)
 
@@ -66,7 +77,12 @@ func NewRouter(pool *pgxpool.Pool, encryptionKey []byte, dirs AppDirs, loc *time
 	repo := authrepo.New(pool)
 	authSvc := authservice.NewAuthService(repo, encryptionKey)
 	userSvc := authservice.NewUserService(repo, auditSvc)
-	authH := authhandler.New(authSvc)
+	var authH *authhandler.Handler
+	if secureCookies {
+		authH = authhandler.NewSecure(authSvc)
+	} else {
+		authH = authhandler.New(authSvc)
+	}
 	adminH := adminhandler.NewUserHandler(userSvc)
 
 	// Catalog

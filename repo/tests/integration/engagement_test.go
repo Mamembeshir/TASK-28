@@ -20,8 +20,8 @@ import (
 // Returns the resource ID string.
 func createPublishedResource(t *testing.T, authorToken, adminToken string) string {
 	t.Helper()
-	authorClient := authedClient(authorToken)
-	adminClient := authedClient(adminToken)
+	authorClient := authedClient(t,authorToken)
+	adminClient := authedClient(t,adminToken)
 
 	// Create draft using form data (matches handler expectations)
 	resp, err := authorClient.PostForm(testServer.URL+"/resources", url.Values{
@@ -81,7 +81,7 @@ func TestVote_CastUpvote(t *testing.T) {
 
 	resourceID := createPublishedResource(t, authorToken, adminToken)
 
-	resp, err := authedClient(voterToken).Post(
+	resp, err := authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"UP"}`),
@@ -109,7 +109,7 @@ func TestVote_CannotVoteOnOwnResource(t *testing.T) {
 
 	resourceID := createPublishedResource(t, authorToken, adminToken)
 
-	resp, err := authedClient(authorToken).Post(
+	resp, err := authedClient(t,authorToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"UP"}`),
@@ -129,7 +129,7 @@ func TestVote_CannotVoteOnDraft(t *testing.T) {
 	voterToken := loginUser(t, "voter3", "Passw0rd!secure")
 
 	// Create draft only — don't publish
-	draftResp, err := authedClient(authorToken).PostForm(testServer.URL+"/resources", url.Values{
+	draftResp, err := authedClient(t,authorToken).PostForm(testServer.URL+"/resources", url.Values{
 		"title":        {"Draft Resource"},
 		"description":  {"d"},
 		"content_body": {"b"},
@@ -141,7 +141,7 @@ func TestVote_CannotVoteOnDraft(t *testing.T) {
 	resourceID := parts[0]
 	require.NotEmpty(t, resourceID)
 
-	resp, err := authedClient(voterToken).Post(
+	resp, err := authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"UP"}`),
@@ -167,7 +167,7 @@ func TestVote_SwitchDirection(t *testing.T) {
 	resourceID := createPublishedResource(t, authorToken, adminToken)
 
 	// Upvote
-	resp, _ := authedClient(voterToken).Post(
+	resp, _ := authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"UP"}`),
@@ -175,7 +175,7 @@ func TestVote_SwitchDirection(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Switch to downvote
-	resp, err := authedClient(voterToken).Post(
+	resp, err := authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"DOWN"}`),
@@ -207,7 +207,7 @@ func TestVote_Retract(t *testing.T) {
 	resourceID := createPublishedResource(t, authorToken, adminToken)
 
 	// Cast vote
-	authedClient(voterToken).Post(
+	authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"UP"}`),
@@ -216,8 +216,7 @@ func TestVote_Retract(t *testing.T) {
 	// Retract vote (DELETE)
 	req, _ := http.NewRequest(http.MethodDelete,
 		testServer.URL+"/resources/"+resourceID+"/vote", nil)
-	req.AddCookie(sessionCookie(voterToken))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := authedClient(t, voterToken).Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -246,7 +245,7 @@ func TestFavorite_Toggle(t *testing.T) {
 	resourceID := createPublishedResource(t, authorToken, adminToken)
 
 	// Add favorite
-	resp, err := authedClient(voterToken).Post(
+	resp, err := authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/favorite",
 		"application/json",
 		nil,
@@ -260,7 +259,7 @@ func TestFavorite_Toggle(t *testing.T) {
 	assert.Equal(t, true, result["favorited"])
 
 	// Remove favorite (second toggle)
-	resp, err = authedClient(voterToken).Post(
+	resp, err = authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/favorite",
 		"application/json",
 		nil,
@@ -285,7 +284,7 @@ func TestFollow_ToggleAuthor(t *testing.T) {
 		`SELECT id FROM users WHERE username='followee1'`).Scan(&followeeID)
 
 	body := fmt.Sprintf(`{"target_type":"AUTHOR","target_id":"%s"}`, followeeID)
-	resp, err := authedClient(followerToken).Post(
+	resp, err := authedClient(t,followerToken).Post(
 		testServer.URL+"/follows",
 		"application/json",
 		strings.NewReader(body),
@@ -321,7 +320,7 @@ func TestSearch_KeywordReturnsResults(t *testing.T) {
 	testPool.Exec(context.Background(),
 		`UPDATE search_index SET tsvector_content=to_tsvector('english','Introduction to Golang Programming') WHERE resource_id=$1`, resourceID)
 
-	resp, err := authedClient(authorToken).Get(
+	resp, err := authedClient(t,authorToken).Get(
 		testServer.URL + "/search?q=golang+programming",
 	)
 	require.NoError(t, err)
@@ -348,7 +347,7 @@ func TestSearch_TypeAheadSuggestions(t *testing.T) {
 		`INSERT INTO search_terms (id, term, usage_count, created_at, updated_at)
 		 VALUES (uuid_generate_v4(), 'mathematics', 10, NOW(), NOW())`)
 
-	resp, err := authedClient(token).Get(
+	resp, err := authedClient(t,token).Get(
 		testServer.URL + "/search/suggest?q=math",
 	)
 	require.NoError(t, err)
@@ -366,17 +365,16 @@ func TestSearch_HistoryRecordedAndClearable(t *testing.T) {
 	token := loginUser(t, "historyuser", "Passw0rd!secure")
 
 	// Perform a search (records history)
-	authedClient(token).Get(testServer.URL + "/search?q=golang")
+	authedClient(t,token).Get(testServer.URL + "/search?q=golang")
 
 	// Get history
-	resp, err := authedClient(token).Get(testServer.URL + "/search/history")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/search/history")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Clear history
 	req, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/search/history", nil)
-	req.AddCookie(sessionCookie(token))
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = authedClient(t, token).Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
@@ -389,7 +387,7 @@ func TestRankings_BestsellersEndpoint(t *testing.T) {
 	registerUser(t, "rankuser1", "rankuser1@test.com", "Passw0rd!secure")
 	token := loginUser(t, "rankuser1", "Passw0rd!secure")
 
-	resp, err := authedClient(token).Get(testServer.URL + "/rankings/bestsellers")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/rankings/bestsellers")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
@@ -400,7 +398,7 @@ func TestRankings_NewReleasesEndpoint(t *testing.T) {
 	registerUser(t, "rankuser2", "rankuser2@test.com", "Passw0rd!secure")
 	token := loginUser(t, "rankuser2", "Passw0rd!secure")
 
-	resp, err := authedClient(token).Get(testServer.URL + "/rankings/new-releases")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/rankings/new-releases")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
@@ -413,7 +411,7 @@ func TestRecommendations_ReturnsEndpoint(t *testing.T) {
 	registerUser(t, "recuser1", "recuser1@test.com", "Passw0rd!secure")
 	token := loginUser(t, "recuser1", "Passw0rd!secure")
 
-	resp, err := authedClient(token).Get(testServer.URL + "/recommendations")
+	resp, err := authedClient(t,token).Get(testServer.URL + "/recommendations")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -436,7 +434,7 @@ func TestRecommendations_DisabledStrategyNotInOutput(t *testing.T) {
 		`UPDATE recommendation_strategy_config SET is_active=FALSE WHERE strategy_key='SimilarTagAffinity'`)
 
 	// Get recommendations — SimilarTagAffinity section should be absent.
-	resp, err := authedClient(adminToken).Get(testServer.URL + "/recommendations")
+	resp, err := authedClient(t,adminToken).Get(testServer.URL + "/recommendations")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -471,7 +469,7 @@ func TestPoints_AwardedOnUpvote(t *testing.T) {
 	resourceID := createPublishedResource(t, authorToken, adminToken)
 
 	// Vote
-	resp, err := authedClient(voterToken).Post(
+	resp, err := authedClient(t,voterToken).Post(
 		testServer.URL+"/resources/"+resourceID+"/vote",
 		"application/json",
 		strings.NewReader(`{"vote_type":"UP"}`),

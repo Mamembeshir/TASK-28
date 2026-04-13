@@ -16,6 +16,7 @@ type Config struct {
 	StatementPath   string
 	EncryptionKey   string
 	FacilityTZ      string
+	SecureCookies   bool
 }
 
 func Load() (*Config, error) {
@@ -50,6 +51,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes (got %d)", len(encryptionKey))
 	}
 
+	// Default to secure cookies unless explicitly disabled.  Non-production
+	// environments can set SECURE_COOKIES=false to allow plain HTTP.
+	secureCookies := true
+	if v := os.Getenv("SECURE_COOKIES"); v == "false" || v == "0" {
+		secureCookies = false
+	}
+
 	cfg := &Config{
 		Port:            port,
 		DatabaseURL:     dbURL,
@@ -60,6 +68,7 @@ func Load() (*Config, error) {
 		StatementPath:   getEnvOrDefault("STATEMENT_PATH", "./data/statements"),
 		EncryptionKey:   encryptionKey,
 		FacilityTZ:      getEnvOrDefault("FACILITY_TIMEZONE", "America/New_York"),
+		SecureCookies:   secureCookies,
 	}
 
 	return cfg, nil

@@ -33,9 +33,9 @@ func TestCatalog_DraftToPublish_FullFlow(t *testing.T) {
 	reviewerToken := loginUser(t, "reviewer1", "SecurePass1!")
 	adminToken := loginUser(t, "admin1", "SecurePass1!")
 
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
 
 	// 1. Create draft
 	resp, err := authorClient.PostForm(testServer.URL+"/resources", url.Values{
@@ -106,8 +106,8 @@ func TestCatalog_RejectReviseResubmit(t *testing.T) {
 
 	authorToken := loginUser(t, "auth2", "SecurePass1!")
 	reviewerToken := loginUser(t, "rev2", "SecurePass1!")
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
 
 	// Create + submit
 	resourceID := createAndSubmitDraft(t, authorClient, "Needs Work", "Some content")
@@ -160,9 +160,9 @@ func TestCatalog_EditPublished_CreatesNewVersion(t *testing.T) {
 	reviewerToken := loginUser(t, "rev3", "SecurePass1!")
 	adminToken := loginUser(t, "adm3", "SecurePass1!")
 
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
 
 	// Full publish
 	resourceID := createAndSubmitDraft(t, authorClient, "Published Resource", "Great content")
@@ -177,10 +177,7 @@ func TestCatalog_EditPublished_CreatesNewVersion(t *testing.T) {
 		"version":     {fmt.Sprintf("%d", version)},
 	}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(sessionCookie(authorToken))
-	resp, err := (&http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}).Do(req)
+	resp, err := authedClient(t, authorToken).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
@@ -205,9 +202,9 @@ func TestCatalog_TakedownAndRestore(t *testing.T) {
 	reviewerToken := loginUser(t, "rev4", "SecurePass1!")
 	adminToken := loginUser(t, "adm4", "SecurePass1!")
 
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
-	adminClient := authedClient(adminToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
+	adminClient := authedClient(t,adminToken)
 
 	resourceID := createAndSubmitDraft(t, authorClient, "Take Me Down", "Content")
 	approveAndPublish(t, reviewerClient, adminClient, resourceID)
@@ -242,7 +239,7 @@ func TestCatalog_FileUpload_ValidPDF(t *testing.T) {
 	registerUser(t, "auth5", "auth5@example.com", "SecurePass1!")
 	makeAuthor(t, "auth5")
 	authorToken := loginUser(t, "auth5", "SecurePass1!")
-	authorClient := authedClient(authorToken)
+	authorClient := authedClient(t,authorToken)
 
 	resourceID := createDraft(t, authorClient, "File Test", "")
 
@@ -251,8 +248,7 @@ func TestCatalog_FileUpload_ValidPDF(t *testing.T) {
 	body, ct := multipartFile("file", "test.pdf", pdfBytes)
 	req, _ := http.NewRequest(http.MethodPost, testServer.URL+"/resources/"+resourceID+"/files", body)
 	req.Header.Set("Content-Type", ct)
-	req.AddCookie(sessionCookie(authorToken))
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := authedClient(t, authorToken).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -264,17 +260,16 @@ func TestCatalog_FileUpload_InvalidMIME(t *testing.T) {
 	registerUser(t, "auth6", "auth6@example.com", "SecurePass1!")
 	makeAuthor(t, "auth6")
 	authorToken := loginUser(t, "auth6", "SecurePass1!")
-	authorClient := authedClient(authorToken)
+	authorClient := authedClient(t,authorToken)
 	_ = authorClient
 
-	resourceID := createDraft(t, authedClient(authorToken), "MIME Test", "")
+	resourceID := createDraft(t, authedClient(t,authorToken), "MIME Test", "")
 
 	// Upload a plain text file (not allowed)
 	body, ct := multipartFile("file", "test.txt", []byte("hello world"))
 	req, _ := http.NewRequest(http.MethodPost, testServer.URL+"/resources/"+resourceID+"/files", body)
 	req.Header.Set("Content-Type", ct)
-	req.AddCookie(sessionCookie(authorToken))
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := authedClient(t, authorToken).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
@@ -293,10 +288,10 @@ func TestCatalog_Approve_Requires_ReviewerOrAdmin(t *testing.T) {
 	authorToken := loginUser(t, "auth7", "SecurePass1!")
 	regularToken := loginUser(t, "reg7", "SecurePass1!")
 
-	resourceID := createAndSubmitDraft(t, authedClient(authorToken), "Protected", "Content")
+	resourceID := createAndSubmitDraft(t, authedClient(t,authorToken), "Protected", "Content")
 
 	version := getResourceVersion(t, resourceID)
-	resp, err := authedClient(regularToken).PostForm(testServer.URL+"/resources/"+resourceID+"/approve", url.Values{
+	resp, err := authedClient(t,regularToken).PostForm(testServer.URL+"/resources/"+resourceID+"/approve", url.Values{
 		"version": {fmt.Sprintf("%d", version)},
 	})
 	require.NoError(t, err)
@@ -315,8 +310,8 @@ func TestCatalog_Publish_Requires_Admin(t *testing.T) {
 	authorToken := loginUser(t, "auth8", "SecurePass1!")
 	reviewerToken := loginUser(t, "rev8", "SecurePass1!")
 
-	authorClient := authedClient(authorToken)
-	reviewerClient := authedClient(reviewerToken)
+	authorClient := authedClient(t,authorToken)
+	reviewerClient := authedClient(t,reviewerToken)
 
 	resourceID := createAndSubmitDraft(t, authorClient, "Need Admin", "Content")
 
@@ -344,7 +339,7 @@ func TestCatalog_CreateDraft_RateLimit(t *testing.T) {
 	registerUser(t, "ratelim", "ratelim@example.com", "SecurePass1!")
 	makeAuthor(t, "ratelim")
 	token := loginUser(t, "ratelim", "SecurePass1!")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	// Manually insert 20 rate limit counter entries to simulate hitting the limit.
 	ctx := context.Background()
@@ -373,7 +368,7 @@ func TestCatalog_CreateDraft_UniquePerSubmit(t *testing.T) {
 	registerUser(t, "idem1", "idem1@example.com", "SecurePass1!")
 	makeAuthor(t, "idem1")
 	token := loginUser(t, "idem1", "SecurePass1!")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	// Two separate creates with same title should each succeed (no uniqueness constraint on title)
 	resp1, err := client.PostForm(testServer.URL+"/resources", url.Values{
@@ -405,7 +400,7 @@ func TestCatalog_StaleVersion_Rejected(t *testing.T) {
 	registerUser(t, "stale1", "stale1@example.com", "SecurePass1!")
 	makeAuthor(t, "stale1")
 	token := loginUser(t, "stale1", "SecurePass1!")
-	client := authedClient(token)
+	client := authedClient(t,token)
 
 	resourceID := createDraft(t, client, "Stale Test", "Content")
 
@@ -415,10 +410,7 @@ func TestCatalog_StaleVersion_Rejected(t *testing.T) {
 		"version": {"0"}, // stale
 	}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(sessionCookie(token))
-	resp, err := (&http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}).Do(req)
+	resp, err := authedClient(t, token).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	// Should fail with 4xx (stale version)
@@ -438,17 +430,14 @@ func TestCatalog_BulkImport_ValidCSV(t *testing.T) {
 	body, ct := multipartFile("file", "import.csv", []byte(csv))
 	req, _ := http.NewRequest(http.MethodPost, testServer.URL+"/import/upload", body)
 	req.Header.Set("Content-Type", ct)
-	req.AddCookie(sessionCookie(token))
-	resp, err := (&http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}).Do(req)
+	resp, err := authedClient(t, token).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
 
 	// Follow redirect to preview page
 	previewURL := testServer.URL + resp.Header.Get("Location")
-	resp2, err := authedClient(token).Get(previewURL)
+	resp2, err := authedClient(t,token).Get(previewURL)
 	require.NoError(t, err)
 	resp2.Body.Close()
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
@@ -466,10 +455,7 @@ func TestCatalog_BulkImport_InvalidRows(t *testing.T) {
 	body, ct := multipartFile("file", "invalid.csv", []byte(csv))
 	req, _ := http.NewRequest(http.MethodPost, testServer.URL+"/import/upload", body)
 	req.Header.Set("Content-Type", ct)
-	req.AddCookie(sessionCookie(token))
-	resp, err := (&http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}).Do(req)
+	resp, err := authedClient(t, token).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	// Should still redirect to preview (validation is preview-only, not rejection)
@@ -491,10 +477,7 @@ func TestCatalog_BulkImport_OverRowLimit(t *testing.T) {
 	body, ct := multipartFile("file", "big.csv", []byte(sb.String()))
 	req, _ := http.NewRequest(http.MethodPost, testServer.URL+"/import/upload", body)
 	req.Header.Set("Content-Type", ct)
-	req.AddCookie(sessionCookie(token))
-	resp, err := (&http.Client{CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}).Do(req)
+	resp, err := authedClient(t, token).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
@@ -511,8 +494,7 @@ func TestCatalog_BulkImport_RequiresAdmin(t *testing.T) {
 	body, ct := multipartFile("file", "test.csv", []byte(csv))
 	req, _ := http.NewRequest(http.MethodPost, testServer.URL+"/import/upload", body)
 	req.Header.Set("Content-Type", ct)
-	req.AddCookie(sessionCookie(token))
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := authedClient(t, token).Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -526,7 +508,7 @@ func TestCatalog_BulkExport_AdminOnly(t *testing.T) {
 	registerUser(t, "auth_exp", "auth_exp@example.com", "SecurePass1!")
 	makeAuthor(t, "auth_exp")
 	token := loginUser(t, "auth_exp", "SecurePass1!")
-	resp, err := authedClient(token).PostForm(testServer.URL+"/export/generate", url.Values{})
+	resp, err := authedClient(t,token).PostForm(testServer.URL+"/export/generate", url.Values{})
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
@@ -538,7 +520,7 @@ func TestCatalog_BulkExport_GeneratesCSV(t *testing.T) {
 	registerUser(t, "adm_exp", "adm_exp@example.com", "SecurePass1!")
 	makeAdmin(t, "adm_exp")
 	token := loginUser(t, "adm_exp", "SecurePass1!")
-	resp, err := authedClient(token).PostForm(testServer.URL+"/export/generate", url.Values{})
+	resp, err := authedClient(t,token).PostForm(testServer.URL+"/export/generate", url.Values{})
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -554,7 +536,7 @@ func TestCatalog_AuditLog_RecordedOnCreate(t *testing.T) {
 	makeAuthor(t, "auditor1")
 	token := loginUser(t, "auditor1", "SecurePass1!")
 
-	resp, err := authedClient(token).PostForm(testServer.URL+"/resources", url.Values{
+	resp, err := authedClient(t,token).PostForm(testServer.URL+"/resources", url.Values{
 		"title": {"Audited Resource"},
 	})
 	require.NoError(t, err)
@@ -577,8 +559,7 @@ func uploadFileForResource(t *testing.T, token, resourceID string) string {
 	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/resources/"+resourceID+"/files", body)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", ct)
-	req.AddCookie(sessionCookie(token))
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := authedClient(t, token).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "uploadFileForResource: expected 201")
@@ -599,13 +580,11 @@ func downloadFile(t *testing.T, token, resourceID, fileID string) int {
 	req, err := http.NewRequest(http.MethodGet,
 		testServer.URL+"/resources/"+resourceID+"/files/"+fileID, nil)
 	require.NoError(t, err)
+	var client *http.Client
 	if token != "" {
-		req.AddCookie(sessionCookie(token))
-	}
-	client := &http.Client{
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+		client = authedClient(t, token)
+	} else {
+		client = &http.Client{}
 	}
 	resp, err := client.Do(req)
 	require.NoError(t, err)
@@ -622,7 +601,7 @@ func TestFileDownload_AuthorCanAccessDraft(t *testing.T) {
 	makeAuthor(t, "fdl_author1")
 	authorToken := loginUser(t, "fdl_author1", "SecurePass1!")
 
-	resourceID := createDraft(t, authedClient(authorToken), "Draft Resource", "")
+	resourceID := createDraft(t, authedClient(t,authorToken), "Draft Resource", "")
 	fileID := uploadFileForResource(t, authorToken, resourceID)
 
 	assert.Equal(t, http.StatusOK, downloadFile(t, authorToken, resourceID, fileID))
@@ -640,7 +619,7 @@ func TestFileDownload_OtherUserCannotAccessDraft(t *testing.T) {
 	authorToken := loginUser(t, "fdl_author2", "SecurePass1!")
 	otherToken := loginUser(t, "fdl_other2", "SecurePass1!")
 
-	resourceID := createDraft(t, authedClient(authorToken), "Draft Resource 2", "")
+	resourceID := createDraft(t, authedClient(t,authorToken), "Draft Resource 2", "")
 	fileID := uploadFileForResource(t, authorToken, resourceID)
 
 	assert.Equal(t, http.StatusForbidden, downloadFile(t, otherToken, resourceID, fileID))
@@ -664,9 +643,9 @@ func TestFileDownload_AnyUserCanAccessPublished(t *testing.T) {
 	adminToken := loginUser(t, "fdl_admin3", "SecurePass1!")
 	otherToken := loginUser(t, "fdl_other3", "SecurePass1!")
 
-	resourceID := createAndSubmitDraft(t, authedClient(authorToken), "Published Resource", "desc")
+	resourceID := createAndSubmitDraft(t, authedClient(t,authorToken), "Published Resource", "desc")
 	fileID := uploadFileForResource(t, authorToken, resourceID)
-	approveAndPublish(t, authedClient(reviewerToken), authedClient(adminToken), resourceID)
+	approveAndPublish(t, authedClient(t,reviewerToken), authedClient(t,adminToken), resourceID)
 
 	assert.Equal(t, http.StatusOK, downloadFile(t, authorToken, resourceID, fileID), "author should access published")
 	assert.Equal(t, http.StatusOK, downloadFile(t, otherToken, resourceID, fileID), "regular user should access published")
@@ -690,13 +669,13 @@ func TestFileDownload_OnlyAdminCanAccessTakenDown(t *testing.T) {
 	adminToken := loginUser(t, "fdl_admin4", "SecurePass1!")
 	otherToken := loginUser(t, "fdl_other4", "SecurePass1!")
 
-	resourceID := createAndSubmitDraft(t, authedClient(authorToken), "TakenDown Resource", "desc")
+	resourceID := createAndSubmitDraft(t, authedClient(t,authorToken), "TakenDown Resource", "desc")
 	fileID := uploadFileForResource(t, authorToken, resourceID)
-	approveAndPublish(t, authedClient(reviewerToken), authedClient(adminToken), resourceID)
+	approveAndPublish(t, authedClient(t,reviewerToken), authedClient(t,adminToken), resourceID)
 
 	// Admin takes it down
 	version := getResourceVersion(t, resourceID)
-	resp, err := authedClient(adminToken).PostForm(
+	resp, err := authedClient(t,adminToken).PostForm(
 		testServer.URL+"/resources/"+resourceID+"/takedown",
 		url.Values{"version": {fmt.Sprintf("%d", version)}},
 	)
