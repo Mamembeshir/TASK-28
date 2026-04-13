@@ -57,7 +57,11 @@ func main() {
 		auditSvc:   audit.NewService(pool),
 	}
 
-	s.authSvc = authservice.NewAuthService(s.authRepo)
+	encKey := []byte(os.Getenv("ENCRYPTION_KEY"))
+	if len(encKey) != 32 {
+		log.Fatalf("ENCRYPTION_KEY must be exactly 32 bytes (got %d); export it before running seed", len(encKey))
+	}
+	s.authSvc = authservice.NewAuthService(s.authRepo, encKey)
 	s.catSvc = catalogservice.NewCatalogService(s.catRepo, s.auditSvc, "data/uploads")
 
 	log.Println("seeding database...")
@@ -278,7 +282,7 @@ func (s *seeder) seedResources(authorID, adminID, reviewerID uuid.UUID, catMap m
 		}
 
 		catID := catMap[spec.categoryKey]
-		res, err := s.catSvc.CreateDraft(s.ctx, authorID, catalogservice.ResourceInput{
+		res, err := s.catSvc.CreateDraft(s.ctx, authorID, []string{"AUTHOR"}, catalogservice.ResourceInput{
 			Title:       spec.title,
 			Description: spec.description,
 			ContentBody: "Content for " + spec.title,

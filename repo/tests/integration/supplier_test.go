@@ -40,8 +40,8 @@ func createSupplierDirect(t *testing.T, name string) string {
 	t.Helper()
 	ctx := context.Background()
 	repo := supplierrepo.New(testPool)
-	svc := supplierservice.NewSupplierService(repo, nil)
-	s, err := svc.CreateSupplier(ctx, name, "test@example.com", "tes****@****.***")
+	svc := supplierservice.NewSupplierService(repo, nil, []byte("test-encryption-key-32-bytes!!!!"))
+	s, err := svc.CreateSupplier(ctx, uuid.Nil, name, "test@example.com", "tes****@****.***")
 	require.NoError(t, err)
 	return s.ID.String()
 }
@@ -400,11 +400,11 @@ func TestKPIRecalculation_Gold(t *testing.T) {
 	ctx := context.Background()
 
 	repo := supplierrepo.New(testPool)
-	kpiSvc := supplierservice.NewKPIService(repo)
+	kpiSvc := supplierservice.NewKPIService(repo, nil)
 
 	// Create supplier
-	svc := supplierservice.NewSupplierService(repo, nil)
-	supplier, err := svc.CreateSupplier(ctx, "Gold Supplier", "gold@test.com", "gol****@****.***")
+	svc := supplierservice.NewSupplierService(repo, nil, []byte("test-encryption-key-32-bytes!!!!"))
+	supplier, err := svc.CreateSupplier(ctx, uuid.Nil, "Gold Supplier", "gold@test.com", "gol****@****.***")
 	require.NoError(t, err)
 
 	// Register a user for QC submission
@@ -447,7 +447,7 @@ func TestKPIRecalculation_Gold(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	kpi, err := kpiSvc.RecalculateKPIs(ctx, supplier.ID)
+	kpi, err := kpiSvc.RecalculateKPIs(ctx, uuid.Nil, supplier.ID)
 	require.NoError(t, err)
 
 	assert.GreaterOrEqual(t, kpi.OnTimeDeliveryPct, 95.0, "OTD should be >= 95")
@@ -463,10 +463,10 @@ func TestKPIRecalculation_Bronze(t *testing.T) {
 	ctx := context.Background()
 
 	repo := supplierrepo.New(testPool)
-	kpiSvc := supplierservice.NewKPIService(repo)
+	kpiSvc := supplierservice.NewKPIService(repo, nil)
 
-	svc := supplierservice.NewSupplierService(repo, nil)
-	supplier, err := svc.CreateSupplier(ctx, "Bronze Supplier", "bronze@test.com", "bro****@****.***")
+	svc := supplierservice.NewSupplierService(repo, nil, []byte("test-encryption-key-32-bytes!!!!"))
+	supplier, err := svc.CreateSupplier(ctx, uuid.Nil, "Bronze Supplier", "bronze@test.com", "bro****@****.***")
 	require.NoError(t, err)
 
 	registerUser(t, "admin_kpi_bronze", "admin_kpi_bronze@test.com", "Admin@12345678")
@@ -508,7 +508,7 @@ func TestKPIRecalculation_Bronze(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	kpi, err := kpiSvc.RecalculateKPIs(ctx, supplier.ID)
+	kpi, err := kpiSvc.RecalculateKPIs(ctx, uuid.Nil, supplier.ID)
 	require.NoError(t, err)
 
 	assert.Equal(t, model.SupplierTierBronze, kpi.TierAssigned, "Should be Bronze tier")
@@ -521,8 +521,8 @@ func TestDeliveryEscalation_FlagsOrders(t *testing.T) {
 	ctx := context.Background()
 
 	repo := supplierrepo.New(testPool)
-	svc := supplierservice.NewSupplierService(repo, nil)
-	supplier, err := svc.CreateSupplier(ctx, "Escalation Supplier", "esc@test.com", "esc****@****.***")
+	svc := supplierservice.NewSupplierService(repo, nil, []byte("test-encryption-key-32-bytes!!!!"))
+	supplier, err := svc.CreateSupplier(ctx, uuid.Nil, "Escalation Supplier", "esc@test.com", "esc****@****.***")
 	require.NoError(t, err)
 
 	// Create order that is 50h old in CREATED status
@@ -544,9 +544,9 @@ func TestDeliveryEscalation_FlagsOrders(t *testing.T) {
 	gamRepo := gamificationrepo.New(testPool)
 	rankSvc := gamificationservice.NewRankingService(gamRepo)
 	engRepo := engagementrepo.New(testPool)
-	kpiSvc := supplierservice.NewKPIService(repo)
+	kpiSvc := supplierservice.NewKPIService(repo, nil)
 
-	scheduler := appcron.New(rankSvc, engRepo, testPool, kpiSvc, repo, nil, nil)
+	scheduler := appcron.New(rankSvc, engRepo, testPool, kpiSvc, repo, nil, nil, nil)
 	scheduler.RunDeliveryEscalation()
 
 	var flagsAfter int
@@ -578,9 +578,9 @@ func TestSupplierUserSeesOwnOrdersOnly(t *testing.T) {
 	_ = loginUser(t, "sup_iso2", "Supplier@12345678")
 
 	// Create two supplier entities
-	svc := supplierservice.NewSupplierService(repo, nil)
-	sup1, _ := svc.CreateSupplier(ctx, "Supplier 1", "s1@test.com", "s1****@****.***")
-	sup2, _ := svc.CreateSupplier(ctx, "Supplier 2", "s2@test.com", "s2****@****.***")
+	svc := supplierservice.NewSupplierService(repo, nil, []byte("test-encryption-key-32-bytes!!!!"))
+	sup1, _ := svc.CreateSupplier(ctx, uuid.Nil, "Supplier 1", "s1@test.com", "s1****@****.***")
+	sup2, _ := svc.CreateSupplier(ctx, uuid.Nil, "Supplier 2", "s2@test.com", "s2****@****.***")
 
 	linkUserToSupplier(t, "sup_iso1", sup1.ID.String())
 	linkUserToSupplier(t, "sup_iso2", sup2.ID.String())
@@ -663,6 +663,30 @@ func submitQCPass(t *testing.T, client *http.Client, adminToken, orderID string)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
+}
+
+// ─── Validation error regression tests ───────────────────────────────────────
+// These tests guard against the recursive handleServiceError bug (Finding 1).
+// An ErrValidation must return 422 Unprocessable Entity, never cause a stack
+// overflow or return a 500.
+
+// TestCreateSupplier_EmptyName_Returns422 verifies that creating a supplier
+// with a blank name returns 422 (not 500 or a stack overflow).
+func TestCreateSupplier_EmptyName_Returns422(t *testing.T) {
+	truncate(t)
+
+	registerUser(t, "sup_val1", "sup_val1@example.com", "SecurePass1!")
+	makeAdmin(t, "sup_val1")
+	adminToken := loginUser(t, "sup_val1", "SecurePass1!")
+
+	resp, err := authedClient(adminToken).PostForm(testServer.URL+"/suppliers", url.Values{
+		"name":    {""}, // empty — triggers ErrValidation
+		"contact": {"test@example.com"},
+	})
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode,
+		"empty supplier name must return 422, not 500 or stack overflow")
 }
 
 // ensure bytes import is used

@@ -33,15 +33,32 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
 
+	// Security-sensitive secrets must be provided explicitly — no insecure
+	// compile-time defaults are permitted.  Startup fails fast if either is
+	// absent so that misconfigured deployments are caught immediately.
+	sessionSecret := os.Getenv("SESSION_SECRET")
+	if sessionSecret == "" {
+		return nil, fmt.Errorf("SESSION_SECRET is required and must be set to a strong random value")
+	}
+
+	encryptionKey := os.Getenv("ENCRYPTION_KEY")
+	if encryptionKey == "" {
+		return nil, fmt.Errorf("ENCRYPTION_KEY is required and must be set to a strong random value")
+	}
+	// AES-256-GCM requires exactly 32 bytes.
+	if len(encryptionKey) != 32 {
+		return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes (got %d)", len(encryptionKey))
+	}
+
 	cfg := &Config{
 		Port:            port,
 		DatabaseURL:     dbURL,
 		DatabaseURLTest: os.Getenv("DATABASE_URL_TEST"),
-		SessionSecret:   getEnvOrDefault("SESSION_SECRET", "change-me-in-production"),
+		SessionSecret:   sessionSecret,
 		UploadPath:      getEnvOrDefault("UPLOAD_PATH", "./data/uploads"),
 		ExportPath:      getEnvOrDefault("EXPORT_PATH", "./data/exports"),
 		StatementPath:   getEnvOrDefault("STATEMENT_PATH", "./data/statements"),
-		EncryptionKey:   getEnvOrDefault("ENCRYPTION_KEY", "change-me-32-byte-key-here!!!!!"),
+		EncryptionKey:   encryptionKey,
 		FacilityTZ:      getEnvOrDefault("FACILITY_TIMEZONE", "America/New_York"),
 	}
 

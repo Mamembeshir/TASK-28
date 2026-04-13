@@ -26,7 +26,7 @@ Session cookie: `session_token` (set on login, cleared on logout, 24 h TTL).
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/` | public | Home page — bestsellers, new releases, recommendations |
+| GET | `/` | auth | Home page — bestsellers, new releases, recommendations |
 | GET | `/search` | auth | Full-text search: `?q=`, `?category_id=`, `?tag=`, `?page=`, `?page_size=` |
 | GET | `/search/suggest` | public | Autocomplete: `?q=` → `{"suggestions":[...]}` |
 | GET | `/search/history` | auth | User's recent search queries |
@@ -42,22 +42,22 @@ Session cookie: `session_token` (set on login, cleared on logout, 24 h TTL).
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/resources` | auth | List resources: `?status=`, `?category_id=`, `?page=`, `?page_size=` |
-| POST | `/resources` | auth | Create draft: `title`, `description`, `content_body`, `category_id`, `tags[]` → 303 `/resources/{id}` |
+| POST | `/resources` | AUTHOR+ | Create draft: `title`, `description`, `content_body`, `category_id`, `tags[]` → 303 `/resources/{id}` |
 | GET | `/resources/:id` | auth | Resource detail |
-| PUT | `/resources/:id` | auth | Update draft/rejected: `title`, `description`, `content_body`, `version` → 303 |
-| DELETE | `/resources/:id` | auth | Delete resource |
-| GET | `/resources/new` | auth | New resource form |
-| GET | `/resources/:id/edit` | auth | Edit form |
+| PUT | `/resources/:id` | AUTHOR+ | Update draft/rejected: `title`, `description`, `content_body`, `version` → 303 |
+| DELETE | `/resources/:id` | AUTHOR+ | Delete resource |
+| GET | `/resources/new` | AUTHOR+ | New resource form |
+| GET | `/resources/:id/edit` | AUTHOR+ | Edit form |
 
 ### 3a. Resource Workflow
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/resources/:id/submit` | auth | DRAFT → PENDING_REVIEW: `version` → 303 |
+| POST | `/resources/:id/submit` | AUTHOR+ | DRAFT → PENDING_REVIEW: `version` → 303 |
 | POST | `/resources/:id/approve` | REVIEWER+ | PENDING_REVIEW → APPROVED: `version` → 303 |
 | POST | `/resources/:id/reject` | REVIEWER+ | PENDING_REVIEW → REJECTED: `version`, `notes` → 303 |
 | POST | `/resources/:id/publish` | ADMIN | APPROVED → PUBLISHED: `version` → 303 |
-| POST | `/resources/:id/revise` | auth | REJECTED → DRAFT: `version` → 303 |
+| POST | `/resources/:id/revise` | AUTHOR+ | REJECTED → DRAFT: `version` → 303 |
 | POST | `/resources/:id/takedown` | ADMIN | PUBLISHED → TAKEN_DOWN: `version`, `reason` → 303 |
 | POST | `/resources/:id/restore` | ADMIN | TAKEN_DOWN → PUBLISHED: `version` → 303 |
 
@@ -65,9 +65,9 @@ Session cookie: `session_token` (set on login, cleared on logout, 24 h TTL).
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/resources/:id/files` | auth | Upload file (multipart, max 50 MB) |
+| POST | `/resources/:id/files` | AUTHOR+ | Upload file (multipart, max 50 MB) |
 | GET | `/resources/:id/files/:fileID` | auth | Download file |
-| DELETE | `/resources/:id/files/:fileID` | auth | Delete file |
+| DELETE | `/resources/:id/files/:fileID` | AUTHOR+ | Delete file |
 
 ### 3c. Review Queue
 
@@ -82,7 +82,7 @@ Session cookie: `session_token` (set on login, cleared on logout, 24 h TTL).
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/tags` | auth | List all tags |
-| POST | `/tags` | auth | Create tag: `name` |
+| POST | `/tags` | AUTHOR+ | Create tag: `name` |
 | DELETE | `/tags/:id` | ADMIN | Delete tag |
 | GET | `/categories` | ADMIN | List categories |
 | POST | `/categories` | ADMIN | Create category: `name`, `description`, `parent_id` |

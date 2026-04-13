@@ -496,7 +496,7 @@ func TestLikeRingDetection_FlagsCreated(t *testing.T) {
 	gamRepo := gamificationrepo.New(testPool)
 	gamSvc := gamificationservice.NewRankingService(gamRepo)
 	engRepo := engagementrepo.New(testPool)
-	scheduler := cron.New(gamSvc, engRepo, testPool, nil, nil, nil, nil)
+	scheduler := cron.New(gamSvc, engRepo, testPool, nil, nil, nil, nil, nil)
 
 	scheduler.RunLikeRingDetection()
 
@@ -509,4 +509,96 @@ func TestLikeRingDetection_FlagsCreated(t *testing.T) {
 		`SELECT COUNT(*) FROM anomaly_flags WHERE flag_type='LIKE_RING' AND status='OPEN'`).Scan(&flagCount)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, flagCount, 1, "expected at least one LIKE_RING anomaly flag")
+}
+
+// ── TestLikeRingDetection_OneWay_NoFlag ─────────────────────────────────────
+// Negative test: high-volume one-way votes (A→B only, no B→A) must NOT
+// produce a LIKE_RING anomaly flag.
+
+func TestLikeRingDetection_OneWay_NoFlag(t *testing.T) {
+	truncate(t)
+
+	registerUser(t, "oneway_a", "oneway_a@example.com", "SecurePass1!")
+	registerUser(t, "oneway_b", "oneway_b@example.com", "SecurePass1!")
+	makeAuthor(t, "oneway_b")
+
+	var userAID, userBID string
+	err := testPool.QueryRow(context.Background(),
+		`SELECT id FROM users WHERE username='oneway_a'`).Scan(&userAID)
+	require.NoError(t, err)
+	err = testPool.QueryRow(context.Background(),
+		`SELECT id FROM users WHERE username='oneway_b'`).Scan(&userBID)
+	require.NoError(t, err)
+
+	// Create 20 resources authored by user B
+	for i := 0; i < 20; i++ {
+		_, err := testPool.Exec(context.Background(), `
+			INSERT INTO resources (id, title, description, content_body, author_id, status, current_version_number, version, created_at, updated_at)
+			VALUES ($1, $2, 'desc', 'body', $3, 'PUBLISHED', 1, 1, NOW(), NOW())`,
+			uuid.New(), fmt.Sprintf("OneWay Resource %d", i), userBID)
+		require.NoError(t, err)
+	}
+
+	// User A votes on all 20 of B's resources — one-way only, B never votes on A
+	rows, err := testPool.Query(context.Background(),
+		`SELECT id FROM resources WHERE author_id = $1`, userBID)
+	require.NoError(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var resID uuid.UUID
+		require.NoError(t, rows.Scan(&resID))
+		_, err := testPool.Exec(context.Background(), `
+			INSERT INTO votes (id, user_id, resource_id, vote_type, created_at, updated_at)
+			VALUES ($1, $2, $3, 'UP', NOW(), NOW())`,
+			uuid.New(), userAID, resID)
+		require.NoError(t, err)
+	}
+
+	// Run like-ring detection
+	gamRepo := gamificationrepo.New(testPool)
+	gamSvc := gamificationservice.NewRankingService(gamRepo)
+	engRepo := engagementrepo.New(testPool)
+	scheduler := cron.New(gamSvc, engRepo, testPool, nil, nil, nil, nil, nil)
+	scheduler.RunLikeRingDetection()
+
+	// Assert zero LIKE_RING flags — one-way voting must not be flagged
+	var flagCount int
+	err = testPool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM anomaly_flags WHERE flag_type='LIKE_RING'`).Scan(&flagCount)
+	require.NoError(t, err)
+	assert.Equal(t, 0, flagCount, "one-way voting pattern must not produce a LIKE_RING flag")
+}
+
+// ─── Validation error regression tests ───────────────────────────────────────
+// These tests guard against the recursive handleServiceError bug (Finding 1).
+// An ErrValidation must return 422 Unprocessable Entity, never cause a stack
+// overflow or return a 500.
+
+// TestBanUser_InvalidBanType_Returns422 verifies that banning a user with an
+// invalid ban_type value returns 422 (not 500 or a stack overflow).
+func TestBanUser_InvalidBanType_Returns422(t *testing.T) {
+	truncate(t)
+
+	registerUser(t, "mod_val_admin", "mod_val_admin@example.com", "SecurePass1!")
+	registerUser(t, "mod_val_target", "mod_val_target@example.com", "SecurePass1!")
+	makeAdmin(t, "mod_val_admin")
+
+	adminToken := loginUser(t, "mod_val_admin", "SecurePass1!")
+
+	var targetID string
+	err := testPool.QueryRow(context.Background(),
+		`SELECT id FROM users WHERE username = 'mod_val_target'`).Scan(&targetID)
+	require.NoError(t, err)
+
+	resp, err := authedClient(adminToken).PostForm(
+		testServer.URL+"/moderation/users/"+targetID+"/ban",
+		url.Values{
+			"ban_type": {"INVALID_TYPE"}, // triggers ErrValidation
+			"reason":   {"testing"},
+		},
+	)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode,
+		"invalid ban_type must return 422, not 500 or stack overflow")
 }

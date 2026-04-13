@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/eduexchange/eduexchange/internal/audit"
 	"github.com/eduexchange/eduexchange/internal/model"
 	supplierrepo "github.com/eduexchange/eduexchange/internal/repository/supplier"
 	"github.com/google/uuid"
@@ -18,12 +19,13 @@ type TierBenefits struct {
 
 // KPIService handles KPI calculation and tier assignment.
 type KPIService struct {
-	repo supplierrepo.SupplierRepository
+	repo     supplierrepo.SupplierRepository
+	auditSvc *audit.Service
 }
 
 // NewKPIService creates a new KPIService.
-func NewKPIService(repo supplierrepo.SupplierRepository) *KPIService {
-	return &KPIService{repo: repo}
+func NewKPIService(repo supplierrepo.SupplierRepository, auditSvc *audit.Service) *KPIService {
+	return &KPIService{repo: repo, auditSvc: auditSvc}
 }
 
 // AssignTier determines supplier tier based on KPI metrics.
@@ -55,13 +57,12 @@ func AssignTier(kpi model.SupplierKPI) model.SupplierTier {
 }
 
 // GetTierBenefits returns the tier-specific benefits.
-// Gold: 72h confirmation window, escalate after 2 misses
-// Silver: 48h, escalate after 1 miss
-// Bronze: 48h, immediate escalation
+// All tiers share the universal 48h confirmation window (SLA requirement).
+// Escalation threshold varies: Gold escalates after 2 misses, Silver after 1, Bronze immediately.
 func GetTierBenefits(tier model.SupplierTier) TierBenefits {
 	switch tier {
 	case model.SupplierTierGold:
-		return TierBenefits{ConfirmWindowHours: 72, EscalationThreshold: 2}
+		return TierBenefits{ConfirmWindowHours: 48, EscalationThreshold: 2}
 	case model.SupplierTierSilver:
 		return TierBenefits{ConfirmWindowHours: 48, EscalationThreshold: 1}
 	default: // Bronze
@@ -69,8 +70,80 @@ func GetTierBenefits(tier model.SupplierTier) TierBenefits {
 	}
 }
 
+// ComputeStockoutRate returns cancelled_lines / total_lines * 100.
+// Stockout is measured by order lines, not by order count.
+func ComputeStockoutRate(orders []model.SupplierOrder) float64 {
+	totalLines, cancelledLines := 0, 0
+	for _, o := range orders {
+		lines := len(o.OrderLines)
+		if lines == 0 {
+			lines = 1 // treat order as one line when no detail stored
+		}
+		totalLines += lines
+		if o.Status == model.OrderStatusCancelled {
+			cancelledLines += lines
+		}
+	}
+	if totalLines == 0 {
+		return 0
+	}
+	return float64(cancelledLines) / float64(totalLines) * 100
+}
+
+// ComputeOnTimeDeliveryRate returns on-time shipments / eligible orders * 100.
+func ComputeOnTimeDeliveryRate(orders []model.SupplierOrder) float64 {
+	eligible, onTime := 0, 0
+	for _, o := range orders {
+		if o.Status == model.OrderStatusCancelled || o.DeliveryDateConfirmed == nil {
+			continue
+		}
+		eligible++
+		if o.ASN != nil && !o.ASN.ShippedAt.IsZero() && !o.ASN.ShippedAt.After(*o.DeliveryDateConfirmed) {
+			onTime++
+		}
+	}
+	if eligible == 0 {
+		return 0
+	}
+	return float64(onTime) / float64(eligible) * 100
+}
+
+// ComputeReturnRate returns QC failures / QC completions within the last 30 days * 100.
+func ComputeReturnRate(orders []model.SupplierOrder, now time.Time) float64 {
+	thirtyDaysAgo := now.Add(-30 * 24 * time.Hour)
+	completed, failed := 0, 0
+	for _, o := range orders {
+		if o.QCResult != nil && !o.QCResult.SubmittedAt.Before(thirtyDaysAgo) {
+			completed++
+			if o.QCResult.Result == model.QCResultFail {
+				failed++
+			}
+		}
+	}
+	if completed == 0 {
+		return 0
+	}
+	return float64(failed) / float64(completed) * 100
+}
+
+// ComputeDefectRate returns sum(defective_units) / sum(inspected_units) * 100.
+func ComputeDefectRate(orders []model.SupplierOrder) float64 {
+	totalInspected, totalDefective := 0, 0
+	for _, o := range orders {
+		if o.QCResult != nil {
+			totalInspected += o.QCResult.InspectedUnits
+			totalDefective += o.QCResult.DefectiveUnits
+		}
+	}
+	if totalInspected == 0 {
+		return 0
+	}
+	return float64(totalDefective) / float64(totalInspected) * 100
+}
+
 // RecalculateKPIs calculates KPIs for a supplier over the rolling 90-day window.
-func (s *KPIService) RecalculateKPIs(ctx context.Context, supplierID uuid.UUID) (*model.SupplierKPI, error) {
+// actorID is the operator who triggered the recalculation (uuid.Nil for cron-initiated).
+func (s *KPIService) RecalculateKPIs(ctx context.Context, actorID, supplierID uuid.UUID) (*model.SupplierKPI, error) {
 	now := time.Now().UTC()
 	periodStart := now.Add(-90 * 24 * time.Hour)
 
@@ -96,79 +169,10 @@ func (s *KPIService) RecalculateKPIs(ctx context.Context, supplierID uuid.UUID) 
 		return kpi, nil
 	}
 
-	// Stockout: cancelled / total
-	cancelled := 0
-	for _, o := range orders {
-		if o.Status == model.OrderStatusCancelled {
-			cancelled++
-		}
-	}
-	kpi.StockoutRatePct = float64(cancelled) / float64(total) * 100
-
-	// OTD: orders with confirmed delivery date and ASN where shipped_at <= delivery_date_confirmed
-	// Only count non-cancelled orders with delivery_date_confirmed set
-	otdEligible := 0
-	otdOnTime := 0
-	for _, o := range orders {
-		if o.Status == model.OrderStatusCancelled {
-			continue
-		}
-		if o.DeliveryDateConfirmed == nil {
-			continue
-		}
-		otdEligible++
-		if o.ASN != nil && !o.ASN.ShippedAt.IsZero() {
-			if !o.ASN.ShippedAt.After(*o.DeliveryDateConfirmed) {
-				otdOnTime++
-			}
-		}
-	}
-	if otdEligible > 0 {
-		kpi.OnTimeDeliveryPct = float64(otdOnTime) / float64(otdEligible) * 100
-	}
-
-	// Return rate: QC_FAILED / qc-completed
-	qcCompleted := 0
-	qcFailed := 0
-	for _, o := range orders {
-		if o.Status == model.OrderStatusQCPassed || o.Status == model.OrderStatusQCFailed ||
-			o.Status == model.OrderStatusClosed {
-			qcCompleted++
-			if o.Status == model.OrderStatusQCFailed {
-				qcFailed++
-			}
-			// Also check the QC result for closed orders
-			if o.Status == model.OrderStatusClosed && o.QCResult != nil {
-				if o.QCResult.Result == model.QCResultFail {
-					qcFailed++
-					qcFailed-- // already counted above if status-based
-				}
-			}
-		}
-	}
-	// More accurate: use QC result
-	qcCompleted = 0
-	qcFailed = 0
-	totalInspected := 0
-	totalDefective := 0
-	for _, o := range orders {
-		if o.QCResult != nil {
-			qcCompleted++
-			if o.QCResult.Result == model.QCResultFail {
-				qcFailed++
-			}
-			totalInspected += o.QCResult.InspectedUnits
-			totalDefective += o.QCResult.DefectiveUnits
-		}
-	}
-	if qcCompleted > 0 {
-		kpi.ReturnRatePct = float64(qcFailed) / float64(qcCompleted) * 100
-	}
-
-	// Defect rate: sum(defective) / sum(inspected) * 100
-	if totalInspected > 0 {
-		kpi.DefectRatePct = float64(totalDefective) / float64(totalInspected) * 100
-	}
+	kpi.StockoutRatePct = ComputeStockoutRate(orders)
+	kpi.OnTimeDeliveryPct = ComputeOnTimeDeliveryRate(orders)
+	kpi.ReturnRatePct = ComputeReturnRate(orders, now)
+	kpi.DefectRatePct = ComputeDefectRate(orders)
 
 	kpi.TierAssigned = AssignTier(*kpi)
 
@@ -179,6 +183,24 @@ func (s *KPIService) RecalculateKPIs(ctx context.Context, supplierID uuid.UUID) 
 	// Update supplier tier
 	if err := s.repo.UpdateSupplierTier(ctx, supplierID, kpi.TierAssigned); err != nil {
 		log.Printf("kpi: failed to update supplier tier for %s: %v", supplierID, err)
+	}
+
+	if s.auditSvc != nil {
+		_ = s.auditSvc.Record(ctx, audit.Entry{
+			ActorID:    actorID,
+			Action:     "supplier.kpi.recalculate",
+			EntityType: "supplier",
+			EntityID:   supplierID,
+			AfterData: map[string]interface{}{
+				"tier":              string(kpi.TierAssigned),
+				"on_time_pct":       kpi.OnTimeDeliveryPct,
+				"stockout_pct":      kpi.StockoutRatePct,
+				"return_rate_pct":   kpi.ReturnRatePct,
+				"defect_rate_pct":   kpi.DefectRatePct,
+			},
+			Source: "supplier",
+			Reason: "kpi recalculation",
+		})
 	}
 
 	return kpi, nil
@@ -192,7 +214,7 @@ func (s *KPIService) RecalculateAllKPIs(ctx context.Context) error {
 	}
 
 	for _, supplier := range suppliers {
-		if _, err := s.RecalculateKPIs(ctx, supplier.ID); err != nil {
+		if _, err := s.RecalculateKPIs(ctx, uuid.Nil, supplier.ID); err != nil {
 			log.Printf("kpi: failed to recalculate KPIs for supplier %s: %v", supplier.ID, err)
 		}
 	}

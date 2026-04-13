@@ -152,9 +152,10 @@ func (s *BulkImportService) Upload(ctx context.Context, actorID uuid.UUID, reade
 		ActorID: actorID, Action: "bulk_import.upload",
 		EntityType: "bulk_import_job", EntityID: job.ID,
 		AfterData: map[string]string{
-			"filename":  originalFilename,
+			"filename":   originalFilename,
 			"total_rows": fmt.Sprintf("%d", len(rows)),
 		},
+		Source: "catalog", Reason: "admin bulk import",
 	})
 
 	return job, nil

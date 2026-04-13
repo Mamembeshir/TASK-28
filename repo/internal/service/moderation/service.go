@@ -64,7 +64,7 @@ func (s *ModerationService) CreateReport(ctx context.Context, reporterID uuid.UU
 		return nil, fmt.Errorf("resource not found: %w", err)
 	}
 	if res.Status != model.ResourceStatusPublished {
-		return nil, fmt.Errorf("resource is not published")
+		return nil, fmt.Errorf("%w: resource is not published", model.ErrValidation)
 	}
 
 	report := &model.Report{
@@ -89,7 +89,7 @@ func (s *ModerationService) AssignReport(ctx context.Context, reportID, reviewer
 		return err
 	}
 	if report.Status != "OPEN" {
-		return fmt.Errorf("report is not OPEN")
+		return fmt.Errorf("%w: report is not OPEN", model.ErrValidation)
 	}
 	report.Status = "UNDER_REVIEW"
 	report.ReviewerID = &reviewerID
@@ -119,7 +119,19 @@ func (s *ModerationService) ResolveReport(ctx context.Context, reportID, moderat
 		Notes:        notes,
 		EvidenceJSON: evidenceMap,
 	}
-	return s.modRepo.CreateModerationAction(ctx, action)
+	if err := s.modRepo.CreateModerationAction(ctx, action); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    moderatorID,
+		Action:     "moderation.report.resolve",
+		EntityType: "report",
+		EntityID:   reportID,
+		AfterData:  map[string]interface{}{"action_type": actionType, "notes": notes},
+		Source:     "moderation",
+		Reason:     notes,
+	})
+	return nil
 }
 
 // DismissReport transitions a report to DISMISSED.
@@ -130,7 +142,19 @@ func (s *ModerationService) DismissReport(ctx context.Context, reportID, moderat
 	}
 	report.Status = "DISMISSED"
 	report.Notes = notes
-	return s.modRepo.UpdateReport(ctx, report)
+	if err := s.modRepo.UpdateReport(ctx, report); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    moderatorID,
+		Action:     "moderation.report.dismiss",
+		EntityType: "report",
+		EntityID:   reportID,
+		AfterData:  map[string]interface{}{"status": "DISMISSED", "notes": notes},
+		Source:     "moderation",
+		Reason:     notes,
+	})
+	return nil
 }
 
 // TakedownResource updates the resource status to TAKEN_DOWN, deducts points from the author, and records an action.
@@ -162,7 +186,18 @@ func (s *ModerationService) TakedownResource(ctx context.Context, resourceID, mo
 			"evidence": evidence,
 		},
 	}
-	return s.modRepo.CreateModerationAction(ctx, action)
+	if err := s.modRepo.CreateModerationAction(ctx, action); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    moderatorID,
+		Action:     "moderation.resource.takedown",
+		EntityType: "resource",
+		EntityID:   resourceID,
+		AfterData:  map[string]interface{}{"status": string(model.ResourceStatusTakenDown)},
+		Source:     "moderation",
+	})
+	return nil
 }
 
 // RestoreResource restores a taken-down resource to PUBLISHED.
@@ -186,7 +221,18 @@ func (s *ModerationService) RestoreResource(ctx context.Context, resourceID, adm
 		Notes:        "Resource restored",
 		EvidenceJSON: map[string]interface{}{},
 	}
-	return s.modRepo.CreateModerationAction(ctx, action)
+	if err := s.modRepo.CreateModerationAction(ctx, action); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    adminID,
+		Action:     "moderation.resource.restore",
+		EntityType: "resource",
+		EntityID:   resourceID,
+		AfterData:  map[string]interface{}{"status": string(model.ResourceStatusPublished)},
+		Source:     "moderation",
+	})
+	return nil
 }
 
 // BanUser creates a user ban. If PERMANENT, also sets users.status=BANNED.
@@ -210,7 +256,7 @@ func (s *ModerationService) BanUser(ctx context.Context, targetUserID, bannedByI
 	case "PERMANENT":
 		ban.ExpiresAt = nil
 	default:
-		return fmt.Errorf("invalid ban type: %s", banType)
+		return fmt.Errorf("%w: invalid ban type: %s", model.ErrValidation, banType)
 	}
 
 	if err := s.modRepo.CreateUserBan(ctx, ban); err != nil {
@@ -239,6 +285,15 @@ func (s *ModerationService) BanUser(ctx context.Context, targetUserID, bannedByI
 	if err := s.modRepo.CreateModerationAction(ctx, action); err != nil {
 		return err
 	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    bannedByID,
+		Action:     "moderation.user.ban",
+		EntityType: "user",
+		EntityID:   targetUserID,
+		AfterData:  map[string]interface{}{"ban_type": banType, "reason": reason},
+		Source:     "moderation",
+		Reason:     reason,
+	})
 
 	// Notify the banned user.
 	if s.notifSvc != nil {
@@ -259,13 +314,24 @@ func (s *ModerationService) UnbanUser(ctx context.Context, targetUserID, adminID
 	if err := s.modRepo.DeactivateBan(ctx, targetUserID); err != nil {
 		return err
 	}
-	return s.modRepo.SetUserStatus(ctx, targetUserID, "ACTIVE")
+	if err := s.modRepo.SetUserStatus(ctx, targetUserID, "ACTIVE"); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    adminID,
+		Action:     "moderation.user.unban",
+		EntityType: "user",
+		EntityID:   targetUserID,
+		AfterData:  map[string]interface{}{"status": "ACTIVE"},
+		Source:     "moderation",
+	})
+	return nil
 }
 
 // ReviewAnomaly processes an anomaly flag as REVIEWED or DISMISSED.
 func (s *ModerationService) ReviewAnomaly(ctx context.Context, flagID uuid.UUID, reviewerID uuid.UUID, decision string) error {
 	if decision != "REVIEWED" && decision != "DISMISSED" {
-		return fmt.Errorf("invalid decision: %s", decision)
+		return fmt.Errorf("%w: invalid decision: %s", model.ErrValidation, decision)
 	}
 
 	// Get the flag to find user IDs if decision is REVIEWED

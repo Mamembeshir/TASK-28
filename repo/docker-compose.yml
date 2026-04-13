@@ -7,8 +7,8 @@ services:
       - DATABASE_URL=postgres://eduexchange:eduexchange@db:5432/eduexchange?sslmode=disable
       - DATABASE_URL_TEST=postgres://eduexchange:eduexchange@db:5432/eduexchange_test?sslmode=disable
       - PORT=8080
-      - SESSION_SECRET=${SESSION_SECRET:-dev-session-secret-change-in-prod}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-dev-encryption-key-32-bytes!!!}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - FACILITY_TIMEZONE=${FACILITY_TIMEZONE:-America/New_York}
       - UPLOAD_PATH=/app/data/uploads
       - EXPORT_PATH=/app/data/exports

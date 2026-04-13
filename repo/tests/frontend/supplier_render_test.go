@@ -46,7 +46,7 @@ func TestSupplierDetailPage_MasksContactForNonAdmin(t *testing.T) {
 		ID:          uuid.New(),
 		Name:        "Test Supplier",
 		ContactMask: "tes****@****.***",
-		ContactJSON: "dGVzdEBleGFtcGxlLmNvbQ==", // base64 of "test@example.com"
+		ContactJSON: "test@example.com", // plaintext; service decrypts before passing to template
 		Tier:        model.SupplierTierBronze,
 		Status:      model.SupplierStatusActive,
 	}
@@ -76,7 +76,7 @@ func TestSupplierDetailPage_ShowsFullContactForAdmin(t *testing.T) {
 		ID:          uuid.New(),
 		Name:        "Test Supplier",
 		ContactMask: "tes****@****.***",
-		ContactJSON: "dGVzdEBleGFtcGxlLmNvbQ==", // base64 of "test@example.com"
+		ContactJSON: "test@example.com", // plaintext; service decrypts before passing to template
 		Tier:        model.SupplierTierBronze,
 		Status:      model.SupplierStatusActive,
 	}

@@ -3,7 +3,9 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -563,6 +565,148 @@ func TestCatalog_AuditLog_RecordedOnCreate(t *testing.T) {
 	testPool.QueryRow(context.Background(),
 		`SELECT COUNT(*) FROM audit_logs WHERE action = 'resource.create'`).Scan(&count)
 	assert.GreaterOrEqual(t, count, 1)
+}
+
+// ─── File download authorization ─────────────────────────────────────────────
+
+// uploadFileForResource uploads a PDF to a resource and returns the file ID.
+func uploadFileForResource(t *testing.T, token, resourceID string) string {
+	t.Helper()
+	pdfBytes := minimalPDFBytes()
+	body, ct := multipartFile("file", "test.pdf", pdfBytes)
+	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/resources/"+resourceID+"/files", body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", ct)
+	req.AddCookie(sessionCookie(token))
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "uploadFileForResource: expected 201")
+	raw, _ := io.ReadAll(resp.Body)
+	var payload struct {
+		File struct {
+			ID string `json:"id"`
+		} `json:"file"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &payload), "uploadFileForResource: bad JSON: %s", raw)
+	require.NotEmpty(t, payload.File.ID, "uploadFileForResource: missing file id")
+	return payload.File.ID
+}
+
+// downloadFile requests a file and returns the HTTP status code.
+func downloadFile(t *testing.T, token, resourceID, fileID string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet,
+		testServer.URL+"/resources/"+resourceID+"/files/"+fileID, nil)
+	require.NoError(t, err)
+	if token != "" {
+		req.AddCookie(sessionCookie(token))
+	}
+	client := &http.Client{
+		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// TestFileDownload_AuthorCanAccessDraft verifies the resource author may download
+// a file attached to their own DRAFT resource.
+func TestFileDownload_AuthorCanAccessDraft(t *testing.T) {
+	truncate(t)
+
+	registerUser(t, "fdl_author1", "fdl_author1@example.com", "SecurePass1!")
+	makeAuthor(t, "fdl_author1")
+	authorToken := loginUser(t, "fdl_author1", "SecurePass1!")
+
+	resourceID := createDraft(t, authedClient(authorToken), "Draft Resource", "")
+	fileID := uploadFileForResource(t, authorToken, resourceID)
+
+	assert.Equal(t, http.StatusOK, downloadFile(t, authorToken, resourceID, fileID))
+}
+
+// TestFileDownload_OtherUserCannotAccessDraft verifies that a user who did not
+// create a DRAFT resource is denied (403) when attempting to download its file.
+func TestFileDownload_OtherUserCannotAccessDraft(t *testing.T) {
+	truncate(t)
+
+	registerUser(t, "fdl_author2", "fdl_author2@example.com", "SecurePass1!")
+	registerUser(t, "fdl_other2", "fdl_other2@example.com", "SecurePass1!")
+	makeAuthor(t, "fdl_author2")
+	makeAuthor(t, "fdl_other2")
+	authorToken := loginUser(t, "fdl_author2", "SecurePass1!")
+	otherToken := loginUser(t, "fdl_other2", "SecurePass1!")
+
+	resourceID := createDraft(t, authedClient(authorToken), "Draft Resource 2", "")
+	fileID := uploadFileForResource(t, authorToken, resourceID)
+
+	assert.Equal(t, http.StatusForbidden, downloadFile(t, otherToken, resourceID, fileID))
+}
+
+// TestFileDownload_AnyUserCanAccessPublished verifies that any authenticated user
+// may download a file from a PUBLISHED resource.
+func TestFileDownload_AnyUserCanAccessPublished(t *testing.T) {
+	truncate(t)
+
+	registerUser(t, "fdl_author3", "fdl_author3@example.com", "SecurePass1!")
+	registerUser(t, "fdl_rev3", "fdl_rev3@example.com", "SecurePass1!")
+	registerUser(t, "fdl_admin3", "fdl_admin3@example.com", "SecurePass1!")
+	registerUser(t, "fdl_other3", "fdl_other3@example.com", "SecurePass1!")
+	makeAuthor(t, "fdl_author3")
+	makeReviewer(t, "fdl_rev3")
+	makeAdmin(t, "fdl_admin3")
+
+	authorToken := loginUser(t, "fdl_author3", "SecurePass1!")
+	reviewerToken := loginUser(t, "fdl_rev3", "SecurePass1!")
+	adminToken := loginUser(t, "fdl_admin3", "SecurePass1!")
+	otherToken := loginUser(t, "fdl_other3", "SecurePass1!")
+
+	resourceID := createAndSubmitDraft(t, authedClient(authorToken), "Published Resource", "desc")
+	fileID := uploadFileForResource(t, authorToken, resourceID)
+	approveAndPublish(t, authedClient(reviewerToken), authedClient(adminToken), resourceID)
+
+	assert.Equal(t, http.StatusOK, downloadFile(t, authorToken, resourceID, fileID), "author should access published")
+	assert.Equal(t, http.StatusOK, downloadFile(t, otherToken, resourceID, fileID), "regular user should access published")
+}
+
+// TestFileDownload_OnlyAdminCanAccessTakenDown verifies that only ADMIN may
+// download a file from a TAKEN_DOWN resource; other users receive 403.
+func TestFileDownload_OnlyAdminCanAccessTakenDown(t *testing.T) {
+	truncate(t)
+
+	registerUser(t, "fdl_author4", "fdl_author4@example.com", "SecurePass1!")
+	registerUser(t, "fdl_rev4", "fdl_rev4@example.com", "SecurePass1!")
+	registerUser(t, "fdl_admin4", "fdl_admin4@example.com", "SecurePass1!")
+	registerUser(t, "fdl_other4", "fdl_other4@example.com", "SecurePass1!")
+	makeAuthor(t, "fdl_author4")
+	makeReviewer(t, "fdl_rev4")
+	makeAdmin(t, "fdl_admin4")
+
+	authorToken := loginUser(t, "fdl_author4", "SecurePass1!")
+	reviewerToken := loginUser(t, "fdl_rev4", "SecurePass1!")
+	adminToken := loginUser(t, "fdl_admin4", "SecurePass1!")
+	otherToken := loginUser(t, "fdl_other4", "SecurePass1!")
+
+	resourceID := createAndSubmitDraft(t, authedClient(authorToken), "TakenDown Resource", "desc")
+	fileID := uploadFileForResource(t, authorToken, resourceID)
+	approveAndPublish(t, authedClient(reviewerToken), authedClient(adminToken), resourceID)
+
+	// Admin takes it down
+	version := getResourceVersion(t, resourceID)
+	resp, err := authedClient(adminToken).PostForm(
+		testServer.URL+"/resources/"+resourceID+"/takedown",
+		url.Values{"version": {fmt.Sprintf("%d", version)}},
+	)
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, "TAKEN_DOWN", getResourceStatus(t, resourceID), "resource should be taken down")
+
+	assert.Equal(t, http.StatusOK, downloadFile(t, adminToken, resourceID, fileID), "admin should access taken-down")
+	assert.Equal(t, http.StatusForbidden, downloadFile(t, authorToken, resourceID, fileID), "author should be denied taken-down")
+	assert.Equal(t, http.StatusForbidden, downloadFile(t, otherToken, resourceID, fileID), "other user should be denied taken-down")
 }
 
 // ─── Unauthenticated access ───────────────────────────────────────────────────

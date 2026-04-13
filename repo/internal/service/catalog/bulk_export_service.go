@@ -111,6 +111,7 @@ func (s *BulkExportService) Export(ctx context.Context, actorID uuid.UUID) (*Exp
 			"filename":       filename,
 			"resource_count": fmt.Sprintf("%d", len(resources)),
 		},
+		Source: "catalog", Reason: "admin bulk export",
 	})
 
 	return &ExportResult{FilePath: filePath, Filename: filename}, nil

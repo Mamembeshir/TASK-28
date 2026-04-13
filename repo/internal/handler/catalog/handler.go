@@ -153,7 +153,7 @@ func (h *Handler) PostCreateResource(c *gin.Context) {
 
 	input := parseResourceInput(c)
 
-	res, err := h.catalogSvc.CreateDraft(c.Request.Context(), authUser.ID, input)
+	res, err := h.catalogSvc.CreateDraft(c.Request.Context(), authUser.ID, authUser.Roles, input)
 	if err != nil {
 		h.renderFormError(c, err, catalogpages.ResourceFormData{Input: input})
 		return
@@ -393,13 +393,24 @@ func (h *Handler) GetDownloadFile(c *gin.Context) {
 		return
 	}
 
-	rf, err := h.catalogSvc.GetFile(c.Request.Context(), resourceID, fileID)
+	caller := middleware.GetAuthUser(c)
+	var callerID uuid.UUID
+	var callerRoles []string
+	if caller != nil {
+		callerID = caller.ID
+		callerRoles = caller.Roles
+	}
+
+	rf, err := h.catalogSvc.GetFile(c.Request.Context(), resourceID, fileID, callerID, callerRoles)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
+		switch {
+		case errors.Is(err, model.ErrNotFound):
 			c.Status(http.StatusNotFound)
-			return
+		case errors.Is(err, model.ErrForbidden):
+			c.Status(http.StatusForbidden)
+		default:
+			c.Status(http.StatusInternalServerError)
 		}
-		c.Status(http.StatusInternalServerError)
 		return
 	}
 
@@ -760,6 +771,10 @@ func renderError(c *gin.Context, err error) {
 	}
 	if errors.Is(err, model.ErrNotFound) {
 		c.Status(http.StatusNotFound)
+		return
+	}
+	if errors.Is(err, model.ErrStaleVersion) {
+		c.Status(http.StatusConflict)
 		return
 	}
 	if errors.Is(err, model.ErrConflict) {

@@ -1,6 +1,8 @@
 package moderationhandler
 
 import (
+	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -24,6 +26,28 @@ func New(svc *moderationservice.ModerationService) *Handler {
 
 func respondError(c *gin.Context, status int, msg string) {
 	c.JSON(status, gin.H{"error": msg})
+}
+
+// internalError logs the real error server-side and returns a safe generic message to the client.
+func internalError(c *gin.Context, err error) {
+	log.Printf("moderation handler: internal error: %v", err)
+	respondError(c, http.StatusInternalServerError, "internal server error")
+}
+
+// handleServiceError translates service-layer errors to appropriate HTTP responses.
+func handleServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, model.ErrValidation):
+		respondError(c, http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, model.ErrForbidden):
+		respondError(c, http.StatusForbidden, "forbidden")
+	case errors.Is(err, model.ErrNotFound):
+		respondError(c, http.StatusNotFound, "not found")
+	case errors.Is(err, model.ErrConflict), errors.Is(err, model.ErrStaleVersion):
+		respondError(c, http.StatusConflict, err.Error())
+	default:
+		internalError(c, err)
+	}
 }
 
 func isHTMLRequest(c *gin.Context) bool {
@@ -59,7 +83,7 @@ func (h *Handler) CreateReport(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "resource not found")
 			return
 		}
-		respondError(c, http.StatusBadRequest, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -75,7 +99,7 @@ func (h *Handler) ListReports(c *gin.Context) {
 
 	reports, _, err := h.svc.ListReports(c.Request.Context(), statusFilter, page, pageSize)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -108,7 +132,7 @@ func (h *Handler) GetReportDetail(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "report not found")
 			return
 		}
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -143,7 +167,7 @@ func (h *Handler) AssignReport(c *gin.Context) {
 	}
 
 	if err := h.svc.AssignReport(c.Request.Context(), reportID, user.ID); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -172,7 +196,7 @@ func (h *Handler) ResolveReport(c *gin.Context) {
 	evidence := c.PostForm("evidence")
 
 	if err := h.svc.ResolveReport(c.Request.Context(), reportID, user.ID, actionType, notes, evidence); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -196,7 +220,7 @@ func (h *Handler) DismissReport(c *gin.Context) {
 	notes := c.PostForm("notes")
 
 	if err := h.svc.DismissReport(c.Request.Context(), reportID, user.ID, notes); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -226,7 +250,7 @@ func (h *Handler) TakedownResource(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "resource not found")
 			return
 		}
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -252,7 +276,7 @@ func (h *Handler) RestoreResource(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "resource not found")
 			return
 		}
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -279,7 +303,7 @@ func (h *Handler) BanUser(c *gin.Context) {
 	reason := c.PostForm("reason")
 
 	if err := h.svc.BanUser(c.Request.Context(), targetUserID, user.ID, banType, reason); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -301,7 +325,7 @@ func (h *Handler) UnbanUser(c *gin.Context) {
 	}
 
 	if err := h.svc.UnbanUser(c.Request.Context(), targetUserID, user.ID); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -317,7 +341,7 @@ func (h *Handler) ListAnomalyFlags(c *gin.Context) {
 
 	flags, err := h.svc.ListAnomalyFlags(c.Request.Context(), statusFilter)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -355,7 +379,7 @@ func (h *Handler) ReviewAnomaly(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "anomaly flag not found")
 			return
 		}
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 

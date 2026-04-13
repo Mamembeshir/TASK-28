@@ -5,7 +5,6 @@ import (
 	"github.com/eduexchange/eduexchange/internal/middleware"
 	"github.com/eduexchange/eduexchange/internal/model"
 	"github.com/eduexchange/eduexchange/internal/templ/layouts"
-	supplierservice "github.com/eduexchange/eduexchange/internal/service/supplier"
 )
 
 // SupplierDetailData holds data for the supplier detail page.
@@ -36,7 +35,7 @@ func (d SupplierDetailData) contactDisplay() string {
 		return ""
 	}
 	if d.IsAdmin && d.Supplier.ContactJSON != "" {
-		return supplierservice.DecryptContact(d.Supplier.ContactJSON)
+		return d.Supplier.ContactJSON
 	}
 	return d.Supplier.ContactMask
 }

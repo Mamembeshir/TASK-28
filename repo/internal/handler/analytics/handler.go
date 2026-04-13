@@ -1,6 +1,7 @@
 package analyticshandler
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -61,6 +62,11 @@ func (h *Handler) GetDashboard(c *gin.Context) {
 	}
 	_ = username
 
+	if c.GetHeader("Accept") == "application/json" {
+		c.JSON(http.StatusOK, gin.H{"metrics": metrics})
+		return
+	}
+
 	c.Header("Content-Type", "text/html")
 	if err := analyticspages.DashboardPage(data).Render(c.Request.Context(), c.Writer); err != nil {
 		c.Status(http.StatusInternalServerError)
@@ -90,7 +96,8 @@ func (h *Handler) PostGenerateReport(c *gin.Context) {
 
 	report, err := h.analyticsSvc.GenerateReport(c.Request.Context(), authUser.ID, reportType, params)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Printf("analytics handler: GenerateReport error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
@@ -190,6 +197,11 @@ func (h *Handler) GetAuditLogs(c *gin.Context) {
 		AuthUser: authUser,
 	}
 
+	if c.GetHeader("Accept") == "application/json" {
+		c.JSON(http.StatusOK, gin.H{"entries": entries, "total": total})
+		return
+	}
+
 	c.Header("Content-Type", "text/html")
 	if err := adminpages.AuditLogPage(data).Render(c.Request.Context(), c.Writer); err != nil {
 		c.Status(http.StatusInternalServerError)
@@ -230,7 +242,8 @@ func (h *Handler) PostExportAuditLog(c *gin.Context) {
 
 	filePath, err := h.analyticsSvc.ExportAuditLog(c.Request.Context(), authUser.ID, filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Printf("analytics handler: ExportAuditLog error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 

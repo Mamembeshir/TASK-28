@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"github.com/eduexchange/eduexchange/internal/middleware"
 	"github.com/eduexchange/eduexchange/internal/model"
-	supplierservice "github.com/eduexchange/eduexchange/internal/service/supplier"
 	"github.com/eduexchange/eduexchange/internal/templ/layouts"
 )
 
@@ -44,7 +43,7 @@ func (d SupplierDetailData) contactDisplay() string {
 		return ""
 	}
 	if d.IsAdmin && d.Supplier.ContactJSON != "" {
-		return supplierservice.DecryptContact(d.Supplier.ContactJSON)
+		return d.Supplier.ContactJSON
 	}
 	return d.Supplier.ContactMask
 }
@@ -91,7 +90,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(data.Supplier.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 55, Col: 97}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 54, Col: 97}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -121,7 +120,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var4 string
 					templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.contactDisplay())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 70, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 69, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 					if templ_7745c5c3_Err != nil {
@@ -139,7 +138,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var5 string
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.Supplier.ContactMask)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 72, Col: 143}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 71, Col: 143}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -162,7 +161,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", data.KPI.OnTimeDeliveryPct))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 83, Col: 108}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 82, Col: 108}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -175,7 +174,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", data.KPI.StockoutRatePct))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 87, Col: 106}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 86, Col: 106}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -188,7 +187,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", data.KPI.ReturnRatePct))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 91, Col: 104}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 90, Col: 104}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -201,7 +200,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", data.KPI.DefectRatePct))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 95, Col: 104}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 94, Col: 104}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -252,7 +251,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var12 string
 					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(o.OrderNumber)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 124, Col: 95}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 123, Col: 95}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {
@@ -273,7 +272,7 @@ func SupplierDetailPage(data SupplierDetailData) templ.Component {
 					var templ_7745c5c3_Var13 string
 					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(o.CreatedAt.Format("2006-01-02"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 128, Col: 120}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/templ/pages/supplier/supplier_detail.templ`, Line: 127, Col: 120}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 					if templ_7745c5c3_Err != nil {

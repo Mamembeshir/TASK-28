@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/eduexchange/eduexchange/internal/audit"
 	"github.com/eduexchange/eduexchange/internal/model"
 	gamificationrepo "github.com/eduexchange/eduexchange/internal/repository/gamification"
 	"github.com/google/uuid"
@@ -18,10 +19,11 @@ type NotificationSender interface {
 type PointsService struct {
 	repo     gamificationrepo.GamificationRepository
 	notifSvc NotificationSender
+	auditSvc *audit.Service
 }
 
-func NewPointsService(repo gamificationrepo.GamificationRepository) *PointsService {
-	return &PointsService{repo: repo}
+func NewPointsService(repo gamificationrepo.GamificationRepository, auditSvc *audit.Service) *PointsService {
+	return &PointsService{repo: repo, auditSvc: auditSvc}
 }
 
 // SetNotificationSender wires in the notification service after construction.
@@ -117,8 +119,45 @@ func (s *PointsService) UpsertPointRule(ctx context.Context, rule *model.PointRu
 }
 
 // UpdatePointRule updates an existing point rule by ID (Admin only).
-func (s *PointsService) UpdatePointRule(ctx context.Context, rule *model.PointRule) error {
-	return s.repo.UpdatePointRuleByID(ctx, rule)
+// actorID is the admin performing the change, recorded in the audit log.
+func (s *PointsService) UpdatePointRule(ctx context.Context, actorID uuid.UUID, rule *model.PointRule) error {
+	// Capture before-state for audit trail.
+	var before map[string]interface{}
+	if rules, err := s.repo.ListPointRules(ctx); err == nil {
+		for _, r := range rules {
+			if r.ID == rule.ID {
+				before = map[string]interface{}{
+					"event_type":  r.EventType,
+					"points":      r.Points,
+					"description": r.Description,
+					"is_active":   r.IsActive,
+				}
+				break
+			}
+		}
+	}
+
+	if err := s.repo.UpdatePointRuleByID(ctx, rule); err != nil {
+		return err
+	}
+
+	if s.auditSvc != nil {
+		_ = s.auditSvc.Record(ctx, audit.Entry{
+			ActorID:    actorID,
+			Action:     "point_rule.update",
+			EntityType: "point_rule",
+			EntityID:   rule.ID,
+			BeforeData: before,
+			AfterData: map[string]interface{}{
+				"points":      rule.Points,
+				"description": rule.Description,
+				"is_active":   rule.IsActive,
+			},
+			Source: "gamification",
+			Reason: "admin point rule update",
+		})
+	}
+	return nil
 }
 
 // ── Badge Checking ────────────────────────────────────────────────────────────

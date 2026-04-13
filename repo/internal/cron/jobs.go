@@ -30,6 +30,7 @@ type Scheduler struct {
 }
 
 // New creates and starts the scheduler.
+// loc sets the timezone used for scheduling (nil → UTC).
 func New(
 	rankSvc *gamificationservice.RankingService,
 	engRepo engagementrepo.EngagementRepository,
@@ -38,8 +39,12 @@ func New(
 	supplierRepo supplierrepo.SupplierRepository,
 	retrySvc *messagingservice.RetryService,
 	analyticsSvc *analyticsservice.AnalyticsService,
+	loc *time.Location,
 ) *Scheduler {
-	c := robfigcron.New(robfigcron.WithSeconds())
+	if loc == nil {
+		loc = time.UTC
+	}
+	c := robfigcron.New(robfigcron.WithSeconds(), robfigcron.WithLocation(loc))
 	s := &Scheduler{c: c, rankSvc: rankSvc, engRepo: engRepo, pool: pool, kpiSvc: kpiSvc, supplierRepo: supplierRepo, retrySvc: retrySvc, analyticsSvc: analyticsSvc}
 
 	// WeeklyRankingReset — Monday 02:00 AM local (RANK-03)
@@ -125,16 +130,23 @@ func (s *Scheduler) likeRingDetection() {
 	ctx := context.Background()
 	log.Println("cron: running LikeRingDetection")
 
-	// Query for pairs with high mutual vote counts in the last 24h.
-	// We scan votes and find pairs where count > 15.
+	// Query for reciprocal pairs: both A→B and B→A voted in last 24h,
+	// each direction having count > 15.  This avoids false positives from
+	// one-way bulk voting.
 	rows, err := s.pool.Query(ctx, `
-		SELECT v.user_id, r.author_id, COUNT(*) AS cnt
-		FROM votes v
-		JOIN resources r ON r.id = v.resource_id
-		WHERE v.updated_at >= NOW() - INTERVAL '24 hours'
-		  AND v.user_id != r.author_id
-		GROUP BY v.user_id, r.author_id
-		HAVING COUNT(*) > 15`)
+		WITH directional AS (
+			SELECT v.user_id AS voter, r.author_id AS author, COUNT(*) AS cnt
+			FROM votes v
+			JOIN resources r ON r.id = v.resource_id
+			WHERE v.updated_at >= NOW() - INTERVAL '24 hours'
+			  AND v.user_id != r.author_id
+			GROUP BY v.user_id, r.author_id
+			HAVING COUNT(*) > 15
+		)
+		SELECT a.voter AS user_a, a.author AS user_b, a.cnt + b.cnt AS cnt
+		FROM directional a
+		JOIN directional b ON a.voter = b.author AND a.author = b.voter
+		WHERE a.voter < a.author`)
 	if err != nil {
 		log.Printf("cron: LikeRingDetection query error: %v", err)
 		return

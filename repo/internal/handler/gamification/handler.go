@@ -139,13 +139,19 @@ func (h *Handler) PutPointRule(c *gin.Context) {
 		return
 	}
 
+	actor := middleware.GetAuthUser(c)
+	var actorID uuid.UUID
+	if actor != nil {
+		actorID = actor.ID
+	}
+
 	rule := &model.PointRule{
 		ID:          id,
 		Points:      body.Points,
 		Description: body.Description,
 		IsActive:    body.IsActive,
 	}
-	if err := h.pointsSvc.UpdatePointRule(c.Request.Context(), rule); err != nil {
+	if err := h.pointsSvc.UpdatePointRule(c.Request.Context(), actorID, rule); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
 		return
 	}

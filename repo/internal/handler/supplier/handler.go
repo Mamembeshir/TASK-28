@@ -1,6 +1,8 @@
 package supplierhandler
 
 import (
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,6 +35,29 @@ func respondError(c *gin.Context, status int, msg string) {
 		return
 	}
 	c.JSON(status, gin.H{"error": msg})
+}
+
+// internalError logs the real error server-side and returns a safe generic message to the client.
+func internalError(c *gin.Context, err error) {
+	log.Printf("supplier handler: internal error: %v", err)
+	respondError(c, http.StatusInternalServerError, "internal server error")
+}
+
+// handleServiceError translates service-layer errors to appropriate HTTP responses.
+// Validation and conflict errors are surfaced with their message; all others are logged and masked.
+func handleServiceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, model.ErrValidation):
+		respondError(c, http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, model.ErrForbidden):
+		respondError(c, http.StatusForbidden, "forbidden")
+	case errors.Is(err, model.ErrNotFound):
+		respondError(c, http.StatusNotFound, "not found")
+	case errors.Is(err, model.ErrConflict), errors.Is(err, model.ErrStaleVersion):
+		respondError(c, http.StatusConflict, err.Error())
+	default:
+		internalError(c, err)
+	}
 }
 
 func isHTMLRequest(c *gin.Context) bool {
@@ -77,7 +102,7 @@ func (h *Handler) GetSupplierList(c *gin.Context) {
 
 	suppliers, err := h.svc.ListSuppliers(c.Request.Context())
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -100,13 +125,19 @@ func (h *Handler) PostCreateSupplier(c *gin.Context) {
 		return
 	}
 
+	user := middleware.GetAuthUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
 	name := c.PostForm("name")
 	contactPlain := c.PostForm("contact")
 	contactMask := supplierservice.MaskContact(contactPlain)
 
-	supplier, err := h.svc.CreateSupplier(c.Request.Context(), name, contactPlain, contactMask)
+	supplier, err := h.svc.CreateSupplier(c.Request.Context(), user.ID, name, contactPlain, contactMask)
 	if err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -134,7 +165,7 @@ func (h *Handler) GetSupplierDetail(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "supplier not found")
 			return
 		}
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -193,7 +224,7 @@ func (h *Handler) GetOrderList(c *gin.Context) {
 
 	orders, total, err := h.svc.ListOrders(c.Request.Context(), supplierID, status, page, pageSize)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -242,9 +273,15 @@ func (h *Handler) PostCreateOrder(c *gin.Context) {
 		}
 	}
 
-	order, err := h.svc.CreateOrder(c.Request.Context(), supplierID, lines)
+	user := middleware.GetAuthUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	order, err := h.svc.CreateOrder(c.Request.Context(), user.ID, supplierID, lines)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -271,7 +308,7 @@ func (h *Handler) GetOrderDetail(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "order not found")
 			return
 		}
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 
@@ -347,7 +384,7 @@ func (h *Handler) PutConfirmDeliveryDate(c *gin.Context) {
 			respondError(c, http.StatusForbidden, "forbidden")
 			return
 		}
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -409,7 +446,7 @@ func (h *Handler) PostSubmitASN(c *gin.Context) {
 			respondError(c, http.StatusForbidden, "forbidden")
 			return
 		}
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -431,7 +468,7 @@ func (h *Handler) PostConfirmReceipt(c *gin.Context) {
 	}
 
 	if err := h.svc.ConfirmReceipt(c.Request.Context(), orderID, user.ID); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -464,7 +501,7 @@ func (h *Handler) PostSubmitQCResult(c *gin.Context) {
 	}
 
 	if err := h.svc.SubmitQCResult(c.Request.Context(), orderID, inspected, defective, result, notes, user.ID); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -484,8 +521,14 @@ func (h *Handler) PostCloseOrder(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.CloseOrder(c.Request.Context(), orderID); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+	user := middleware.GetAuthUser(c)
+	if user == nil {
+		respondError(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := h.svc.CloseOrder(c.Request.Context(), orderID, user.ID); err != nil {
+		handleServiceError(c, err)
 		return
 	}
 
@@ -507,7 +550,7 @@ func (h *Handler) PostCancelOrder(c *gin.Context) {
 	}
 
 	if err := h.svc.CancelOrder(c.Request.Context(), orderID, user.ID); err != nil {
-		respondError(c, http.StatusBadRequest, err.Error())
+		handleServiceError(c, err)
 		return
 	}
 
@@ -553,7 +596,8 @@ func (h *Handler) GetKPIDashboard(c *gin.Context) {
 
 // PostRecalculateKPIs handles POST /suppliers/:id/kpis/recalculate
 func (h *Handler) PostRecalculateKPIs(c *gin.Context) {
-	if !isAdmin(c) {
+	user := middleware.GetAuthUser(c)
+	if user == nil || !isAdmin(c) {
 		respondError(c, http.StatusForbidden, "admin only")
 		return
 	}
@@ -564,9 +608,9 @@ func (h *Handler) PostRecalculateKPIs(c *gin.Context) {
 		return
 	}
 
-	kpi, err := h.kpiSvc.RecalculateKPIs(c.Request.Context(), supplierID)
+	kpi, err := h.kpiSvc.RecalculateKPIs(c.Request.Context(), user.ID, supplierID)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		internalError(c, err)
 		return
 	}
 

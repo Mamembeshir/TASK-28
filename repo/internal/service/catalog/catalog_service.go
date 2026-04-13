@@ -24,6 +24,12 @@ type NotificationSender interface {
 	Send(ctx context.Context, userID uuid.UUID, eventType model.EventType, title, body string, resourceID *uuid.UUID) error
 }
 
+// SearchIndexUpdater is the interface for refreshing the pinyin/tag search index
+// after a resource is created or updated, without importing the search service directly.
+type SearchIndexUpdater interface {
+	UpdateSearchIndex(ctx context.Context, r *model.Resource) error
+}
+
 const resourceRateLimit = 20 // posts per clock-hour (MOD-01)
 
 // ResourceInput is the data for creating or updating a resource.
@@ -37,11 +43,12 @@ type ResourceInput struct {
 
 // CatalogService handles the resource lifecycle.
 type CatalogService struct {
-	repo      catalogrepo.CatalogRepository
-	auditSvc  *audit.Service
-	uploadDir string
-	notifSvc  NotificationSender
-	engRepo   engagementrepo.EngagementRepository
+	repo               catalogrepo.CatalogRepository
+	auditSvc           *audit.Service
+	uploadDir          string
+	notifSvc           NotificationSender
+	engRepo            engagementrepo.EngagementRepository
+	searchIndexUpdater SearchIndexUpdater
 }
 
 func NewCatalogService(repo catalogrepo.CatalogRepository, auditSvc *audit.Service, uploadDir string) *CatalogService {
@@ -55,9 +62,19 @@ func (s *CatalogService) SetNotificationSender(n NotificationSender, engRepo eng
 	s.engRepo = engRepo
 }
 
+// SetSearchIndexUpdater wires in the search index updater. Called after construction.
+func (s *CatalogService) SetSearchIndexUpdater(si SearchIndexUpdater) {
+	s.searchIndexUpdater = si
+}
+
 // ── CreateDraft: Author creates a new DRAFT resource + version 1 ───────────────
 
-func (s *CatalogService) CreateDraft(ctx context.Context, authorID uuid.UUID, input ResourceInput) (*model.Resource, error) {
+func (s *CatalogService) CreateDraft(ctx context.Context, authorID uuid.UUID, callerRoles []string, input ResourceInput) (*model.Resource, error) {
+	// Service-level defence-in-depth: only AUTHORS or ADMINs may create entries.
+	if !containsRole(callerRoles, "AUTHOR") && !containsRole(callerRoles, "ADMIN") {
+		return nil, model.ErrForbidden
+	}
+
 	if errs := ValidateResourceInput(input.Title, input.Description); errs.HasErrors() {
 		return nil, errs
 	}
@@ -106,7 +123,14 @@ func (s *CatalogService) CreateDraft(ctx context.Context, authorID uuid.UUID, in
 		AfterData: map[string]interface{}{"title": res.Title, "status": "DRAFT"},
 	})
 
-	return s.repo.GetResource(ctx, res.ID)
+	created, err := s.repo.GetResource(ctx, res.ID)
+	if err != nil {
+		return nil, err
+	}
+	if s.searchIndexUpdater != nil {
+		_ = s.searchIndexUpdater.UpdateSearchIndex(ctx, created)
+	}
+	return created, nil
 }
 
 // ── UpdateDraft: Creates a new version snapshot, resource stays DRAFT ─────────
@@ -157,14 +181,29 @@ func (s *CatalogService) UpdateDraft(ctx context.Context, resourceID, editorID u
 		ActorID: editorID, Action: "resource.update",
 		EntityType: "resource", EntityID: res.ID,
 		BeforeData: before, AfterData: map[string]interface{}{"title": res.Title},
+		Source: "catalog", Reason: "author draft update",
 	})
 
-	return s.repo.GetResource(ctx, resourceID)
+	updated, err := s.repo.GetResource(ctx, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	if s.searchIndexUpdater != nil {
+		_ = s.searchIndexUpdater.UpdateSearchIndex(ctx, updated)
+	}
+	return updated, nil
 }
 
 // ── SubmitForReview: DRAFT → PENDING_REVIEW ───────────────────────────────────
 
 func (s *CatalogService) SubmitForReview(ctx context.Context, resourceID, authorID uuid.UUID, version int) (*model.Resource, error) {
+	res, err := s.repo.GetResource(ctx, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	if res.AuthorID != authorID {
+		return nil, model.ErrForbidden
+	}
 	return s.transition(ctx, resourceID, authorID, model.ResourceStatusPendingReview, version, "resource.submit")
 }
 
@@ -180,6 +219,9 @@ func (s *CatalogService) EditPublished(ctx context.Context, resourceID, editorID
 		ve := model.NewValidationErrors()
 		ve.Add("status", "EditPublished is only valid for PUBLISHED resources.")
 		return nil, ve
+	}
+	if res.AuthorID != editorID {
+		return nil, model.ErrForbidden
 	}
 	if errs := ValidateResourceInput(input.Title, input.Description); errs.HasErrors() {
 		return nil, errs
@@ -215,9 +257,17 @@ func (s *CatalogService) EditPublished(ctx context.Context, resourceID, editorID
 		ActorID: editorID, Action: "resource.edit_published",
 		EntityType: "resource", EntityID: res.ID,
 		BeforeData: before, AfterData: map[string]interface{}{"status": "PENDING_REVIEW"},
+		Source: "catalog", Reason: "edit published resource — re-enters review",
 	})
 
-	return s.repo.GetResource(ctx, resourceID)
+	edited, err := s.repo.GetResource(ctx, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	if s.searchIndexUpdater != nil {
+		_ = s.searchIndexUpdater.UpdateSearchIndex(ctx, edited)
+	}
+	return edited, nil
 }
 
 // ── Approve: PENDING_REVIEW → APPROVED ───────────────────────────────────────
@@ -266,14 +316,14 @@ func (s *CatalogService) Publish(ctx context.Context, resourceID, authorID uuid.
 		return nil, err
 	}
 	if s.notifSvc != nil {
-		// Notify the author that publish is complete
-		s.notifSvc.Send(ctx, authorID, model.EventPublishComplete, //nolint:errcheck
+		// Notify the resource author that their content is now live.
+		s.notifSvc.Send(ctx, res.AuthorID, model.EventPublishComplete, //nolint:errcheck
 			"Your resource is now live",
 			fmt.Sprintf(`"%s" has been published and is visible to all users.`, res.Title),
 			&resourceID)
-		// Fan-out to followers if engagement repo is wired
+		// Fan-out to followers of the resource author.
 		if s.engRepo != nil {
-			if followerIDs, err := s.engRepo.ListFollowerIDs(ctx, authorID); err == nil {
+			if followerIDs, err := s.engRepo.ListFollowerIDs(ctx, res.AuthorID); err == nil {
 				for _, followerID := range followerIDs {
 					s.notifSvc.Send(ctx, followerID, model.EventFollowNewContent, //nolint:errcheck
 						"New content from someone you follow",
@@ -289,6 +339,13 @@ func (s *CatalogService) Publish(ctx context.Context, resourceID, authorID uuid.
 // ── ReviseRejected: REJECTED → DRAFT ─────────────────────────────────────────
 
 func (s *CatalogService) ReviseRejected(ctx context.Context, resourceID, authorID uuid.UUID, version int) (*model.Resource, error) {
+	res, err := s.repo.GetResource(ctx, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	if res.AuthorID != authorID {
+		return nil, model.ErrForbidden
+	}
 	return s.transition(ctx, resourceID, authorID, model.ResourceStatusDraft, version, "resource.revise")
 }
 
@@ -448,7 +505,11 @@ func (s *CatalogService) ListReviews(ctx context.Context, resourceID uuid.UUID) 
 	return s.repo.ListReviews(ctx, resourceID)
 }
 
-func (s *CatalogService) GetFile(ctx context.Context, resourceID, fileID uuid.UUID) (*model.ResourceFile, error) {
+// GetFile fetches a resource file and enforces visibility access policy:
+//   - PUBLISHED: any authenticated caller may download.
+//   - DRAFT / PENDING_REVIEW / APPROVED / REJECTED: only the resource author or ADMIN/REVIEWER.
+//   - TAKEN_DOWN: only ADMIN.
+func (s *CatalogService) GetFile(ctx context.Context, resourceID, fileID, callerID uuid.UUID, callerRoles []string) (*model.ResourceFile, error) {
 	f, err := s.repo.GetFile(ctx, fileID)
 	if err != nil {
 		return nil, err
@@ -456,8 +517,33 @@ func (s *CatalogService) GetFile(ctx context.Context, resourceID, fileID uuid.UU
 	if f.ResourceID != resourceID {
 		return nil, model.ErrNotFound
 	}
+
+	res, err := s.repo.GetResource(ctx, resourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	isAdmin := containsRole(callerRoles, "ADMIN")
+	isReviewer := containsRole(callerRoles, "REVIEWER")
+	isAuthor := res.AuthorID == callerID
+
+	switch res.Status {
+	case model.ResourceStatusPublished:
+		// any authenticated user is allowed
+	case model.ResourceStatusTakenDown:
+		if !isAdmin {
+			return nil, model.ErrForbidden
+		}
+	default:
+		// DRAFT, PENDING_REVIEW, APPROVED, REJECTED
+		if !isAuthor && !isAdmin && !isReviewer {
+			return nil, model.ErrForbidden
+		}
+	}
+
 	return f, nil
 }
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -486,6 +572,7 @@ func (s *CatalogService) transition(ctx context.Context, resourceID, actorID uui
 		EntityType: "resource", EntityID: resourceID,
 		BeforeData: map[string]string{"status": before.String()},
 		AfterData:  map[string]string{"status": to.String()},
+		Source: "catalog", Reason: auditAction,
 	})
 
 	return s.repo.GetResource(ctx, resourceID)

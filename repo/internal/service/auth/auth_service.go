@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/eduexchange/eduexchange/internal/crypto"
 	"github.com/eduexchange/eduexchange/internal/model"
 	authrepo "github.com/eduexchange/eduexchange/internal/repository/auth"
 	"github.com/google/uuid"
@@ -16,12 +17,41 @@ import (
 const sessionTTL = 24 * time.Hour
 
 // AuthService handles registration, login, logout and session validation.
+//
+// Password hashes are stored encrypted at rest (AES-256-GCM) using encryptionKey.
+// When encryptionKey is nil or zero-length the service falls back to plain
+// bcrypt storage so that unit tests that do not supply a key continue to work.
 type AuthService struct {
-	repo authrepo.UserRepository
+	repo          authrepo.UserRepository
+	encryptionKey []byte
 }
 
-func NewAuthService(repo authrepo.UserRepository) *AuthService {
-	return &AuthService{repo: repo}
+func NewAuthService(repo authrepo.UserRepository, encryptionKey []byte) *AuthService {
+	return &AuthService{repo: repo, encryptionKey: encryptionKey}
+}
+
+// encryptHash wraps a raw bcrypt hash with AES-256-GCM if a key is configured.
+func (s *AuthService) encryptHash(hash string) (string, error) {
+	if len(s.encryptionKey) == 0 {
+		return hash, nil
+	}
+	return crypto.Encrypt(s.encryptionKey, []byte(hash))
+}
+
+// decryptHash undoes encryptHash.  If the stored value was never encrypted
+// (e.g. written by a test without a key) it is returned as-is so that
+// bcrypt.CompareHashAndPassword can still verify it.
+func (s *AuthService) decryptHash(stored string) (string, error) {
+	if len(s.encryptionKey) == 0 {
+		return stored, nil
+	}
+	plain, err := crypto.Decrypt(s.encryptionKey, stored)
+	if err != nil {
+		// Value may be a legacy plain bcrypt hash — return it unchanged so
+		// the caller can attempt a direct compare and handle the failure.
+		return stored, nil
+	}
+	return string(plain), nil
 }
 
 // Register validates inputs, hashes the password, persists the user, and assigns REGULAR_USER.
@@ -55,11 +85,17 @@ func (s *AuthService) Register(ctx context.Context, username, email, password st
 		return nil, err
 	}
 
+	// Encrypt the hash before persistence (at-rest compliance).
+	encryptedHash, err := s.encryptHash(string(hash))
+	if err != nil {
+		return nil, err
+	}
+
 	u := &model.User{
 		ID:           uuid.New(),
 		Username:     username,
 		Email:        email,
-		PasswordHash: string(hash),
+		PasswordHash: encryptedHash,
 		Status:       model.UserStatusActive,
 	}
 	profile := &model.UserProfile{
@@ -104,8 +140,14 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*Lo
 		return nil, model.ErrForbidden
 	}
 
+	// Decrypt the stored hash before comparing.
+	hashForCompare, err := s.decryptHash(u.PasswordHash)
+	if err != nil {
+		return nil, err
+	}
+
 	// Compare password
-	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(hashForCompare), []byte(password)); err != nil {
 		// Record failure (AUTH-02)
 		_ = s.repo.RecordFailedLogin(ctx, u.ID)
 		return nil, model.ErrNotFound // return generic error to avoid username enumeration

@@ -45,15 +45,48 @@ func (s *SupplierService) SetNotificationSender(n NotificationSender, adminFinde
 
 // ── Contact helpers ────────────────────────────────────────────────────────────
 
-// EncryptContact base64-encodes the plain contact string.
-func EncryptContact(plain string) string {
-	return base64.StdEncoding.EncodeToString([]byte(plain))
+// EncryptContact encrypts the plain contact string using AES-256-GCM.
+// The output is base64(nonce || ciphertext || tag).
+func (s *SupplierService) EncryptContact(plain string) (string, error) {
+	block, err := aes.NewCipher(s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("encrypt contact: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("encrypt contact: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("encrypt contact: %w", err)
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plain), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// DecryptContact base64-decodes the encrypted contact string.
-func DecryptContact(enc string) string {
-	b, _ := base64.StdEncoding.DecodeString(enc)
-	return string(b)
+// DecryptContact decrypts a value produced by EncryptContact.
+func (s *SupplierService) DecryptContact(enc string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		return "", fmt.Errorf("decrypt contact: %w", err)
+	}
+	block, err := aes.NewCipher(s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("decrypt contact: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("decrypt contact: %w", err)
+	}
+	if len(data) < gcm.NonceSize() {
+		return "", fmt.Errorf("decrypt contact: ciphertext too short")
+	}
+	nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("decrypt contact: %w", err)
+	}
+	return string(plaintext), nil
 }
 
 // MaskContact returns first 3 chars + "****@****.***".
@@ -67,16 +100,22 @@ func MaskContact(plain string) string {
 // ── Supplier operations ────────────────────────────────────────────────────────
 
 // CreateSupplier creates a new supplier entity.
-func (s *SupplierService) CreateSupplier(ctx context.Context, name, contactPlain, contactMask string) (*model.Supplier, error) {
+// actorID is the admin operator creating the record, used for audit traceability.
+func (s *SupplierService) CreateSupplier(ctx context.Context, actorID uuid.UUID, name, contactPlain, contactMask string) (*model.Supplier, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", model.ErrValidation)
+	}
+
+	encContact, err := s.EncryptContact(contactPlain)
+	if err != nil {
+		return nil, err
 	}
 
 	now := time.Now().UTC()
 	supplier := &model.Supplier{
 		ID:          uuid.New(),
 		Name:        name,
-		ContactJSON: EncryptContact(contactPlain),
+		ContactJSON: encContact,
 		ContactMask: contactMask,
 		Tier:        model.SupplierTierBronze,
 		Status:      model.SupplierStatusActive,
@@ -88,10 +127,22 @@ func (s *SupplierService) CreateSupplier(ctx context.Context, name, contactPlain
 	if err := s.repo.CreateSupplier(ctx, supplier); err != nil {
 		return nil, err
 	}
+	if s.auditSvc != nil {
+		_ = s.auditSvc.Record(ctx, audit.Entry{
+			ActorID:    actorID,
+			Action:     "supplier.create",
+			EntityType: "supplier",
+			EntityID:   supplier.ID,
+			AfterData:  map[string]interface{}{"name": supplier.Name, "contact_mask": supplier.ContactMask, "tier": string(supplier.Tier)},
+			Source:     "supplier",
+		})
+	}
 	return supplier, nil
 }
 
-// GetSupplier retrieves a supplier by ID, masking contact if not admin.
+// GetSupplier retrieves a supplier by ID.
+// For admin callers the contact is decrypted and returned in ContactJSON as plaintext.
+// For non-admin callers ContactJSON is cleared.
 func (s *SupplierService) GetSupplier(ctx context.Context, id uuid.UUID, isAdmin bool) (*model.Supplier, error) {
 	supplier, err := s.repo.GetSupplier(ctx, id)
 	if err != nil {
@@ -99,16 +150,44 @@ func (s *SupplierService) GetSupplier(ctx context.Context, id uuid.UUID, isAdmin
 	}
 	if !isAdmin {
 		supplier.ContactJSON = ""
+		return supplier, nil
+	}
+	if supplier.ContactJSON != "" {
+		plain, err := s.DecryptContact(supplier.ContactJSON)
+		if err != nil {
+			return nil, err
+		}
+		supplier.ContactJSON = plain
 	}
 	return supplier, nil
 }
 
 // UpdateSupplier persists supplier changes.
-func (s *SupplierService) UpdateSupplier(ctx context.Context, supplier *model.Supplier, isAdmin bool) error {
+// actorID is the admin operator performing the update, used for audit traceability.
+func (s *SupplierService) UpdateSupplier(ctx context.Context, actorID uuid.UUID, supplier *model.Supplier, isAdmin bool) error {
 	if !isAdmin {
 		return model.ErrForbidden
 	}
-	return s.repo.UpdateSupplier(ctx, supplier)
+	before, _ := s.repo.GetSupplier(ctx, supplier.ID)
+	if err := s.repo.UpdateSupplier(ctx, supplier); err != nil {
+		return err
+	}
+	if s.auditSvc != nil {
+		var beforeData interface{}
+		if before != nil {
+			beforeData = map[string]interface{}{"name": before.Name, "tier": string(before.Tier), "status": string(before.Status)}
+		}
+		_ = s.auditSvc.Record(ctx, audit.Entry{
+			ActorID:    actorID,
+			Action:     "supplier.update",
+			EntityType: "supplier",
+			EntityID:   supplier.ID,
+			BeforeData: beforeData,
+			AfterData:  map[string]interface{}{"name": supplier.Name, "tier": string(supplier.Tier), "status": string(supplier.Status)},
+			Source:     "supplier",
+		})
+	}
+	return nil
 }
 
 // ListSuppliers returns all suppliers.
@@ -119,7 +198,8 @@ func (s *SupplierService) ListSuppliers(ctx context.Context) ([]model.Supplier, 
 // ── Order operations ───────────────────────────────────────────────────────────
 
 // CreateOrder creates a new supplier order with generated order number.
-func (s *SupplierService) CreateOrder(ctx context.Context, supplierID uuid.UUID, lines []model.OrderLine) (*model.SupplierOrder, error) {
+// actorID is the operator (admin or supplier user) initiating the order, used for audit traceability.
+func (s *SupplierService) CreateOrder(ctx context.Context, actorID, supplierID uuid.UUID, lines []model.OrderLine) (*model.SupplierOrder, error) {
 	now := time.Now().UTC()
 	id := uuid.New()
 	orderNumber := fmt.Sprintf("ORD-%s-%s", now.Format("20060102"), id.String()[:8])
@@ -138,6 +218,14 @@ func (s *SupplierService) CreateOrder(ctx context.Context, supplierID uuid.UUID,
 	if err := s.repo.CreateOrder(ctx, order); err != nil {
 		return nil, err
 	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    actorID,
+		Action:     "order.create",
+		EntityType: "supplier_order",
+		EntityID:   order.ID,
+		AfterData:  map[string]interface{}{"order_number": order.OrderNumber, "status": string(order.Status)},
+		Source:     "supplier",
+	})
 	return order, nil
 }
 
@@ -158,6 +246,7 @@ func (s *SupplierService) ListOrders(ctx context.Context, supplierID *uuid.UUID,
 }
 
 // ConfirmDeliveryDate transitions an order from CREATED → CONFIRMED.
+// All suppliers must confirm within the universal 48-hour SLA window.
 func (s *SupplierService) ConfirmDeliveryDate(ctx context.Context, orderID uuid.UUID, deliveryDate time.Time, supplierID uuid.UUID) error {
 	order, err := s.repo.GetOrder(ctx, orderID)
 	if err != nil {
@@ -170,12 +259,30 @@ func (s *SupplierService) ConfirmDeliveryDate(ctx context.Context, orderID uuid.
 		return model.ErrForbidden
 	}
 
+	// Universal 48-hour SLA: all tiers must confirm within 48h of order creation.
+	const confirmWindowHours = 48
+	if time.Since(order.CreatedAt) > confirmWindowHours*time.Hour {
+		return fmt.Errorf("%w: confirmation window of 48h has passed; contact support for override",
+			model.ErrValidation)
+	}
+
 	now := time.Now().UTC()
 	order.Status = model.OrderStatusConfirmed
 	order.DeliveryDateConfirmed = &deliveryDate
 	order.DeliveryDateConfirmedAt = &now
 
-	return s.repo.UpdateOrder(ctx, order)
+	if err := s.repo.UpdateOrder(ctx, order); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    supplierID,
+		Action:     "order.confirm_delivery_date",
+		EntityType: "supplier_order",
+		EntityID:   orderID,
+		AfterData:  map[string]interface{}{"status": string(order.Status), "delivery_date": deliveryDate},
+		Source:     "supplier",
+	})
+	return nil
 }
 
 // SubmitASN transitions an order from CONFIRMED → SHIPPED and creates ASN.
@@ -208,6 +315,14 @@ func (s *SupplierService) SubmitASN(ctx context.Context, orderID uuid.UUID, trac
 	if err := s.repo.UpdateOrder(ctx, order); err != nil {
 		return err
 	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    supplierID,
+		Action:     "order.submit_asn",
+		EntityType: "supplier_order",
+		EntityID:   orderID,
+		AfterData:  map[string]interface{}{"status": string(order.Status), "tracking_info": trackingInfo},
+		Source:     "supplier",
+	})
 
 	// Notify admins of new shipment.
 	if s.notifSvc != nil && s.adminFinderFn != nil {
@@ -236,7 +351,18 @@ func (s *SupplierService) ConfirmReceipt(ctx context.Context, orderID uuid.UUID,
 	order.Status = model.OrderStatusReceived
 	order.ReceivedAt = &now
 
-	return s.repo.UpdateOrder(ctx, order)
+	if err := s.repo.UpdateOrder(ctx, order); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    adminID,
+		Action:     "order.confirm_receipt",
+		EntityType: "supplier_order",
+		EntityID:   orderID,
+		AfterData:  map[string]interface{}{"status": string(order.Status)},
+		Source:     "supplier",
+	})
+	return nil
 }
 
 // SubmitQCResult submits QC and transitions to QC_PASSED or QC_FAILED.
@@ -283,11 +409,22 @@ func (s *SupplierService) SubmitQCResult(ctx context.Context, orderID uuid.UUID,
 	} else {
 		order.Status = model.OrderStatusQCFailed
 	}
-	return s.repo.UpdateOrder(ctx, order)
+	if err := s.repo.UpdateOrder(ctx, order); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    submittedBy,
+		Action:     "order.submit_qc",
+		EntityType: "supplier_order",
+		EntityID:   orderID,
+		AfterData:  map[string]interface{}{"status": string(order.Status), "result": string(result), "defect_rate_pct": defectRatePct},
+		Source:     "supplier",
+	})
+	return nil
 }
 
 // CloseOrder transitions an order from QC_PASSED/QC_FAILED → CLOSED.
-func (s *SupplierService) CloseOrder(ctx context.Context, orderID uuid.UUID) error {
+func (s *SupplierService) CloseOrder(ctx context.Context, orderID, adminID uuid.UUID) error {
 	order, err := s.repo.GetOrder(ctx, orderID)
 	if err != nil {
 		return err
@@ -297,7 +434,18 @@ func (s *SupplierService) CloseOrder(ctx context.Context, orderID uuid.UUID) err
 	}
 
 	order.Status = model.OrderStatusClosed
-	return s.repo.UpdateOrder(ctx, order)
+	if err := s.repo.UpdateOrder(ctx, order); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    adminID,
+		Action:     "order.close",
+		EntityType: "supplier_order",
+		EntityID:   orderID,
+		AfterData:  map[string]interface{}{"status": string(order.Status)},
+		Source:     "supplier",
+	})
+	return nil
 }
 
 // CancelOrder transitions an order from CREATED/CONFIRMED → CANCELLED.
@@ -310,6 +458,19 @@ func (s *SupplierService) CancelOrder(ctx context.Context, orderID uuid.UUID, ad
 		return fmt.Errorf("%w: only CREATED or CONFIRMED orders can be cancelled", model.ErrValidation)
 	}
 
+	prevStatus := order.Status
 	order.Status = model.OrderStatusCancelled
-	return s.repo.UpdateOrder(ctx, order)
+	if err := s.repo.UpdateOrder(ctx, order); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, audit.Entry{
+		ActorID:    adminID,
+		Action:     "order.cancel",
+		EntityType: "supplier_order",
+		EntityID:   orderID,
+		BeforeData: map[string]interface{}{"status": string(prevStatus)},
+		AfterData:  map[string]interface{}{"status": string(order.Status)},
+		Source:     "supplier",
+	})
+	return nil
 }

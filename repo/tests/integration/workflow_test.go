@@ -10,8 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/eduexchange/eduexchange/internal/cron"
+	engagementrepo "github.com/eduexchange/eduexchange/internal/repository/engagement"
+	gamificationrepo "github.com/eduexchange/eduexchange/internal/repository/gamification"
+	gamificationservice "github.com/eduexchange/eduexchange/internal/service/gamification"
 )
 
 // ── 1. Author Lifecycle: draft → submit → approve → publish → upvote → points ──
@@ -84,11 +90,11 @@ func TestWorkflow_AuthorLifecycle(t *testing.T) {
 
 	// 7. Voter upvotes
 	resp, err = voterClient.PostForm(testServer.URL+"/resources/"+resourceID+"/vote", url.Values{
-		"direction": {"up"},
+		"vote_type": {"UP"},
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
-	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// 8. Author gets points for the vote
 	var points int
@@ -128,12 +134,12 @@ func TestWorkflow_ModerationFlow(t *testing.T) {
 	// Reporter files a report
 	resp, err := reporterClient.PostForm(testServer.URL+"/reports", url.Values{
 		"resource_id": {resourceID},
-		"reason":      {"spam"},
-		"details":     {"This is spam content"},
+		"reason_type": {"SPAM"},
+		"description": {"This is spam content"},
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
-	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	// Get the report ID
 	var reportID string
@@ -149,7 +155,7 @@ func TestWorkflow_ModerationFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
-	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "TAKEN_DOWN", getResourceStatus(t, resourceID))
 
 	// Author lost points
@@ -162,12 +168,12 @@ func TestWorkflow_ModerationFlow(t *testing.T) {
 
 	// Admin bans the author
 	resp, err = adminClient.PostForm(testServer.URL+"/moderation/users/"+authorID.String()+"/ban", url.Values{
+		"ban_type": {"7_DAYS"},
 		"reason":   {"Repeated violations"},
-		"duration": {"7"},
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
-	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Verify ban_notice notification
 	var banNotifCount int
@@ -206,6 +212,12 @@ func TestWorkflow_SupplierFlow(t *testing.T) {
 		`SELECT id FROM suppliers WHERE name='Workflow Supplier Co.' LIMIT 1`).Scan(&supplierID)
 	require.NoError(t, err)
 
+	// Link wf_sup_user to the supplier entity so they can act as its representative
+	supUserID := getUserIDByUsername(t, "wf_sup_user")
+	_, err = testPool.Exec(context.Background(),
+		`UPDATE suppliers SET user_id = $1 WHERE id = $2`, supUserID, supplierID)
+	require.NoError(t, err)
+
 	// Create order
 	resp, err = adminClient.PostForm(testServer.URL+"/supplier/orders", url.Values{
 		"supplier_id": {supplierID},
@@ -224,7 +236,7 @@ func TestWorkflow_SupplierFlow(t *testing.T) {
 	// Supplier confirms delivery date
 	deliveryDate := time.Now().Add(7 * 24 * time.Hour).Format("2006-01-02")
 	resp, err = supClient.PostForm(testServer.URL+"/supplier/orders/"+orderID+"/confirm", url.Values{
-		"confirmed_delivery_date": {deliveryDate},
+		"delivery_date": {deliveryDate},
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -238,10 +250,9 @@ func TestWorkflow_SupplierFlow(t *testing.T) {
 
 	// Submit ASN
 	resp, err = supClient.PostForm(testServer.URL+"/supplier/orders/"+orderID+"/asn", url.Values{
-		"tracking_number":      {"TRK-WF-001"},
-		"carrier":              {"FedEx"},
-		"estimated_delivery":   {deliveryDate},
-		"actual_quantity_sent": {"50"},
+		"tracking_info": {"TRK-WF-001 via FedEx"},
+		"shipped_at":    {time.Now().Format("2006-01-02")},
+		"expected_arrival": {deliveryDate},
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -255,8 +266,10 @@ func TestWorkflow_SupplierFlow(t *testing.T) {
 
 	// QC pass
 	resp, err = adminClient.PostForm(testServer.URL+"/supplier/orders/"+orderID+"/qc", url.Values{
-		"passed": {"true"},
-		"notes":  {"All good"},
+		"inspected_units": {"50"},
+		"defective_units": {"0"},
+		"result":          {"PASS"},
+		"notes":           {"All good"},
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
@@ -275,7 +288,7 @@ func TestWorkflow_SupplierFlow(t *testing.T) {
 	resp, err = adminClient.PostForm(testServer.URL+"/suppliers/"+supplierID+"/kpis/recalculate", url.Values{})
 	require.NoError(t, err)
 	resp.Body.Close()
-	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 // ── 4. Search: Chinese title → pinyin found; typo → suggestion ──
@@ -318,8 +331,8 @@ func TestWorkflow_Search(t *testing.T) {
 
 	// Typo suggestion: seed a synonym
 	_, err = testPool.Exec(context.Background(),
-		`INSERT INTO synonym_groups (id, terms, created_at)
-		 VALUES (gen_random_uuid(), ARRAY['math', 'mathematics', 'maths'], NOW())
+		`INSERT INTO synonym_groups (id, canonical_term, synonyms, created_at, updated_at)
+		 VALUES (gen_random_uuid(), 'math', ARRAY['mathematics', 'maths'], NOW(), NOW())
 		 ON CONFLICT DO NOTHING`)
 	require.NoError(t, err)
 
@@ -363,11 +376,11 @@ func TestWorkflow_Gamification(t *testing.T) {
 
 	// Voter upvotes (triggers points for author)
 	resp, err := voterClient.PostForm(testServer.URL+"/resources/"+resourceID+"/vote", url.Values{
-		"direction": {"up"},
+		"vote_type": {"UP"},
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
-	assert.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Verify author has points
 	var totalPoints int
@@ -378,8 +391,8 @@ func TestWorkflow_Gamification(t *testing.T) {
 
 	// Inject enough points to trigger level up and check level_up notification
 	_, err = testPool.Exec(context.Background(), `
-		INSERT INTO user_points (user_id, total_points, level, created_at, updated_at)
-		VALUES ($1, 200, 1, NOW(), NOW())
+		INSERT INTO user_points (user_id, total_points, level, updated_at)
+		VALUES ($1, 200, 1, NOW())
 		ON CONFLICT (user_id) DO UPDATE SET total_points=200, level=1, updated_at=NOW()
 	`, authorID)
 	require.NoError(t, err)
@@ -558,7 +571,7 @@ func TestWorkflow_Recommendations(t *testing.T) {
 	})
 	require.NoError(t, err)
 	resp2.Body.Close()
-	assert.Equal(t, http.StatusSeeOther, resp2.StatusCode)
+	assert.Equal(t, http.StatusOK, resp2.StatusCode)
 }
 
 // ── 8. Bulk Import: 10 valid rows → 10 DRAFT; invalid rows → errors ──
@@ -697,60 +710,57 @@ func TestWorkflow_LikeRingDetection(t *testing.T) {
 
 	registerUser(t, "wf_lr_a", "wf_lr_a@test.com", "Password@123456")
 	registerUser(t, "wf_lr_b", "wf_lr_b@test.com", "Password@123456")
-	registerUser(t, "wf_lr_reviewer", "wf_lr_reviewer@test.com", "Password@123456")
-	registerUser(t, "wf_lr_admin", "wf_lr_admin@test.com", "Password@123456")
-	makeAuthor(t, "wf_lr_a")
-	makeAuthor(t, "wf_lr_b")
-	makeReviewer(t, "wf_lr_reviewer")
-	makeAdmin(t, "wf_lr_admin")
 
-	aToken := loginUser(t, "wf_lr_a", "Password@123456")
-	bToken := loginUser(t, "wf_lr_b", "Password@123456")
-	aClient := authedClient(aToken)
-	bClient := authedClient(bToken)
-	reviewerToken := loginUser(t, "wf_lr_reviewer", "Password@123456")
-	adminToken := loginUser(t, "wf_lr_admin", "Password@123456")
-
-	// Create two resources (one per author) and publish them
-	resourceA := createAndSubmitDraft(t, aClient, "Author A Resource", "Content A")
-	resourceB := createAndSubmitDraft(t, bClient, "Author B Resource", "Content B")
-	approveAndPublish(t, authedClient(reviewerToken), authedClient(adminToken), resourceA)
-	approveAndPublish(t, authedClient(reviewerToken), authedClient(adminToken), resourceB)
-
-	// Seed mutual votes directly to simulate like-ring pattern
 	aID := getUserIDByUsername(t, "wf_lr_a")
 	bID := getUserIDByUsername(t, "wf_lr_b")
 
-	// Insert 16 mutual vote pairs directly in DB (simulating pattern over time)
+	// Create 16 published resources per author directly in DB so each user
+	// has enough resources for the other to vote on (votes have a unique
+	// constraint on user_id+resource_id).
+	resourceIDsA := make([]uuid.UUID, 16)
+	resourceIDsB := make([]uuid.UUID, 16)
 	for i := 0; i < 16; i++ {
+		resourceIDsA[i] = uuid.New()
+		resourceIDsB[i] = uuid.New()
 		_, err := testPool.Exec(context.Background(), `
-			INSERT INTO votes (id, user_id, resource_id, direction, created_at)
-			VALUES (gen_random_uuid(), $1, $2, 'up', NOW() - interval '1 minute' * $3)
-			ON CONFLICT (user_id, resource_id) DO NOTHING`,
-			aID, resourceB, i)
+			INSERT INTO resources (id, author_id, title, description, status, version, created_at, updated_at)
+			VALUES ($1, $2, $3, 'content', 'PUBLISHED', 1, NOW(), NOW())`,
+			resourceIDsA[i], aID, fmt.Sprintf("A-Resource-%d", i))
 		require.NoError(t, err)
 		_, err = testPool.Exec(context.Background(), `
-			INSERT INTO votes (id, user_id, resource_id, direction, created_at)
-			VALUES (gen_random_uuid(), $1, $2, 'up', NOW() - interval '1 minute' * $3)
-			ON CONFLICT (user_id, resource_id) DO NOTHING`,
-			bID, resourceA, i)
+			INSERT INTO resources (id, author_id, title, description, status, version, created_at, updated_at)
+			VALUES ($1, $2, $3, 'content', 'PUBLISHED', 1, NOW(), NOW())`,
+			resourceIDsB[i], bID, fmt.Sprintf("B-Resource-%d", i))
 		require.NoError(t, err)
 	}
 
-	// Trigger a vote via API to run like-ring detection
-	resp, err := aClient.PostForm(testServer.URL+"/resources/"+resourceB+"/vote", url.Values{
-		"direction": {"up"},
-	})
-	require.NoError(t, err)
-	resp.Body.Close()
+	// Insert reciprocal votes: B votes on A's 16 resources, A votes on B's 16
+	for i := 0; i < 16; i++ {
+		_, err := testPool.Exec(context.Background(), `
+			INSERT INTO votes (id, user_id, resource_id, vote_type, created_at, updated_at)
+			VALUES ($1, $2, $3, 'UP', NOW(), NOW())`,
+			uuid.New(), bID, resourceIDsA[i])
+		require.NoError(t, err)
+		_, err = testPool.Exec(context.Background(), `
+			INSERT INTO votes (id, user_id, resource_id, vote_type, created_at, updated_at)
+			VALUES ($1, $2, $3, 'UP', NOW(), NOW())`,
+			uuid.New(), aID, resourceIDsB[i])
+		require.NoError(t, err)
+	}
+
+	// Run like-ring detection cron directly
+	gamRepo := gamificationrepo.New(testPool)
+	gamSvc := gamificationservice.NewRankingService(gamRepo)
+	engRepo := engagementrepo.New(testPool)
+	scheduler := cron.New(gamSvc, engRepo, testPool, nil, nil, nil, nil, nil)
+	scheduler.RunLikeRingDetection()
 
 	// Check anomaly flags were created
 	var flagCount int
-	err = testPool.QueryRow(context.Background(),
+	err := testPool.QueryRow(context.Background(),
 		`SELECT COUNT(*) FROM anomaly_flags WHERE flag_type='LIKE_RING'`).Scan(&flagCount)
 	require.NoError(t, err)
-	// Anomaly flag may or may not be created depending on threshold logic; just verify endpoint works
-	assert.GreaterOrEqual(t, flagCount, 0)
+	assert.GreaterOrEqual(t, flagCount, 1, "expected at least one LIKE_RING anomaly flag for reciprocal voting pattern")
 }
 
 // ── 12. Idempotency: double-submit resource → single record ──

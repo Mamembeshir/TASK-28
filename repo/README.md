@@ -7,9 +7,21 @@ Offline Learning Resource Exchange & Supplier Fulfillment Console for school dis
 - Docker
 - Docker Compose
 
-No other tools required. Everything builds and runs inside Docker.
+No other tools are required to run or test the application. All builds, migrations, and tests execute inside Docker containers.
 
 ## Quick Start
+
+1. Create a `.env` file in the `repo/` directory with the required secrets:
+
+```bash
+cp .env.example .env   # if .env.example exists, or create manually:
+# SESSION_SECRET=<random-32-char-string>
+# ENCRYPTION_KEY=<exactly-32-byte-string>
+```
+
+`SESSION_SECRET` secures browser sessions and `ENCRYPTION_KEY` (must be exactly 32 bytes) is used for AES-256-GCM at-rest encryption of sensitive fields. Both are required; the server will refuse to start without them.
+
+2. Start the application:
 
 ```bash
 docker-compose up
@@ -17,12 +29,26 @@ docker-compose up
 
 Open [http://localhost:8080](http://localhost:8080).
 
+The server automatically runs migrations and seeds a minimal set of demo users on first boot.
+
 ## Demo Accounts
 
-Seed the database with demo data first:
+The server seeds a minimal set of accounts on first boot. For a richer dataset (published resources, engagement data, supplier orders) run the full seed via Docker:
 
 ```bash
-DATABASE_URL=postgres://eduexchange:eduexchange@localhost:5432/eduexchange go run ./cmd/seed
+# Preferred: runs inside the already-running container (no local Go required)
+make seed
+
+# Alternative: reset the DB, apply migrations, then seed in one step
+make fresh
+```
+
+If you need to run the rich seed locally (requires Go and a reachable Postgres):
+
+```bash
+DATABASE_URL=postgres://eduexchange:eduexchange@localhost:5432/eduexchange?sslmode=disable \
+ENCRYPTION_KEY=change-me-32-byte-key-here!!!!!! \
+go run ./cmd/seed
 ```
 
 | Username | Password | Roles |

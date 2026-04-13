@@ -219,13 +219,19 @@ func (h *Handler) PutStrategyConfig(c *gin.Context) {
 		return
 	}
 
+	actor := middleware.GetAuthUser(c)
+	var actorID uuid.UUID
+	if actor != nil {
+		actorID = actor.ID
+	}
+
 	cfg := &model.RecommendationStrategyConfig{
 		ID:        id,
 		Label:     body.Label,
 		SortOrder: body.SortOrder,
 		IsActive:  body.IsActive,
 	}
-	if err := h.recSvc.UpdateStrategyConfig(c.Request.Context(), cfg); err != nil {
+	if err := h.recSvc.UpdateStrategyConfig(c.Request.Context(), actorID, cfg); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
 		return
 	}

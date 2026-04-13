@@ -80,7 +80,7 @@ func TestPostGenerateReport_AsAdmin(t *testing.T) {
 
 	var result map[string]interface{}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
-	assert.Contains(t, result, "report_id")
+	assert.Contains(t, result, "id")
 
 	// Verify a report record was created in DB
 	var count int
