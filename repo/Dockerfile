@@ -12,10 +12,17 @@ ENV GOFLAGS=-mod=mod
 # Install templ CLI
 RUN go install github.com/a-h/templ/cmd/templ@v0.2.778
 
-# Download Tailwind CSS standalone CLI (linux-x64)
-RUN curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.4/tailwindcss-linux-x64 \
-    && chmod +x tailwindcss-linux-x64 \
-    && mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+# Download Tailwind CSS standalone CLI (architecture-aware)
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+         amd64) TW_ARCH="linux-x64" ;; \
+         arm64) TW_ARCH="linux-arm64" ;; \
+         *) echo "Unsupported arch: $ARCH" && exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+         -o /usr/local/bin/tailwindcss \
+         "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.4/tailwindcss-${TW_ARCH}" \
+    && chmod +x /usr/local/bin/tailwindcss
 
 # Copy go.mod first for layer caching
 COPY go.mod ./
