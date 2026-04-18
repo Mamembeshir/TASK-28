@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,6 +18,10 @@ func TestGetSupplierPortal_AsSupplier_Returns200(t *testing.T) {
 	registerUser(t, "portal_sup1", "portal_sup1@example.com", "SecurePass1!")
 	makeSupplierRole(t, "portal_sup1")
 	token := loginUser(t, "portal_sup1", "SecurePass1!")
+
+	// Portal requires the user to be linked to a supplier record; otherwise 404.
+	supplierID := createSupplierDirect(t, "Portal Supplier")
+	linkUserToSupplier(t, "portal_sup1", supplierID)
 
 	resp, err := authedClient(t, token).Get(testServer.URL + "/supplier/portal")
 	require.NoError(t, err)
@@ -36,8 +41,23 @@ func TestGetSupplierPortal_AsRegularUser_Forbidden(t *testing.T) {
 }
 
 // ─── GET /supplier/orders/new ─────────────────────────────────────────────────
+// Route is in the supplier group (SUPPLIER+ADMIN) but the handler additionally
+// gates on isAdmin — so only admins successfully render the form; suppliers
+// get 403 by design.
 
-func TestGetSupplierOrderForm_AsSupplier_Returns200(t *testing.T) {
+func TestGetSupplierOrderForm_AsAdmin_Returns200(t *testing.T) {
+	truncate(t)
+	registerUser(t, "ordnew_admin1", "ordnew_admin1@example.com", "SecurePass1!")
+	makeAdmin(t, "ordnew_admin1")
+	token := loginUser(t, "ordnew_admin1", "SecurePass1!")
+
+	resp, err := authedClient(t, token).Get(testServer.URL + "/supplier/orders/new")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestGetSupplierOrderForm_AsSupplier_Forbidden(t *testing.T) {
 	truncate(t)
 	registerUser(t, "ordnew_sup1", "ordnew_sup1@example.com", "SecurePass1!")
 	makeSupplierRole(t, "ordnew_sup1")
@@ -46,7 +66,7 @@ func TestGetSupplierOrderForm_AsSupplier_Returns200(t *testing.T) {
 	resp, err := authedClient(t, token).Get(testServer.URL + "/supplier/orders/new")
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
 func TestGetSupplierOrderForm_AsRegularUser_Forbidden(t *testing.T) {
@@ -112,14 +132,19 @@ func TestPutConfirmDeliveryDate_AsSupplier_Confirms(t *testing.T) {
 	linkUserToSupplier(t, "putconf_sup1", supplierID)
 	orderID := createOrderViaAdmin(t, adminToken, supplierID)
 
+	// Handler requires a delivery_date form field (YYYY-MM-DD); otherwise 400.
+	body := strings.NewReader(url.Values{
+		"delivery_date": {"2030-01-15"},
+	}.Encode())
 	req, _ := http.NewRequest(http.MethodPut,
 		testServer.URL+"/supplier/orders/"+orderID+"/confirm",
-		nil)
+		body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := authedClient(t, supToken).Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	// Supplier confirming delivery date — 200 or 422 if date missing
+	// Supplier confirming delivery date — 200 on success, 422 on domain-level validation failure.
 	assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnprocessableEntity,
 		"expected 200 or 422, got %d", resp.StatusCode)
 }

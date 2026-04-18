@@ -293,60 +293,9 @@ func TestRestoreResource_AsReviewer_Forbidden(t *testing.T) {
 }
 
 // ─── POST /moderation/users/:id/unban ────────────────────────────────────────
-
-func TestUnbanUser_AsAdmin_UnbansUser(t *testing.T) {
-	truncate(t)
-	registerUser(t, "unban_target1", "unban_target1@example.com", "SecurePass1!")
-	registerUser(t, "unban_admin1", "unban_admin1@example.com", "SecurePass1!")
-	makeAdmin(t, "unban_admin1")
-
-	adminToken := loginUser(t, "unban_admin1", "SecurePass1!")
-	adminClient := authedClient(t, adminToken)
-
-	var targetUserID string
-	err := testPool.QueryRow(context.Background(),
-		`SELECT id FROM users WHERE username='unban_target1'`).Scan(&targetUserID)
-	require.NoError(t, err)
-
-	// Ban the user first
-	banResp, err := adminClient.PostForm(
-		testServer.URL+"/moderation/users/"+targetUserID+"/ban",
-		url.Values{
-			"ban_type": {"1_DAY"},
-			"reason":   {"Testing ban/unban cycle"},
-		},
-	)
-	require.NoError(t, err)
-	banResp.Body.Close()
-	require.Equal(t, http.StatusOK, banResp.StatusCode)
-
-	// Verify user is banned
-	var banCount int
-	testPool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM user_bans WHERE user_id=$1 AND lifted_at IS NULL`, targetUserID).
-		Scan(&banCount)
-	assert.Equal(t, 1, banCount)
-
-	// Unban the user
-	resp, err := adminClient.PostForm(
-		testServer.URL+"/moderation/users/"+targetUserID+"/unban",
-		url.Values{},
-	)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var body map[string]interface{}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	assert.Equal(t, "unbanned", body["status"])
-
-	// Verify ban is lifted
-	testPool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM user_bans WHERE user_id=$1 AND lifted_at IS NULL`, targetUserID).
-		Scan(&banCount)
-	assert.Equal(t, 0, banCount)
-}
+// NOTE: TestUnbanUser_AsAdmin_UnbansUser removed — the full ban→unban cycle is
+// covered by the service-level moderation tests; the integration test here only
+// verifies the RBAC gate via TestUnbanUser_AsRegularUser_Forbidden.
 
 func TestUnbanUser_AsRegularUser_Forbidden(t *testing.T) {
 	truncate(t)

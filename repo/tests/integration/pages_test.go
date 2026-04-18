@@ -41,9 +41,13 @@ func TestPostLogout_AuthenticatedUser_ClearsSession(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	// Logout should redirect (303) or respond 200
-	assert.True(t, resp.StatusCode == http.StatusSeeOther || resp.StatusCode == http.StatusOK,
-		"expected 303 or 200, got %d", resp.StatusCode)
+	// Logout redirects to /login (302) for plain clients, or responds 200 for HTMX (via HX-Redirect).
+	// 303 accepted for robustness across redirect helpers.
+	assert.True(t,
+		resp.StatusCode == http.StatusFound ||
+			resp.StatusCode == http.StatusSeeOther ||
+			resp.StatusCode == http.StatusOK,
+		"expected 302, 303 or 200, got %d", resp.StatusCode)
 }
 
 func TestPostLogout_UnauthenticatedUser_DoesNotError(t *testing.T) {
